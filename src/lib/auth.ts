@@ -1,24 +1,61 @@
 import { cookies } from "next/headers";
+import { db } from "./db";
+import { encrypt, decrypt } from "./session";
+import type { SessionPayload } from "./session";
+import { Role, User } from "@prisma/client";
 
-export type UserRole = "OWNER" | "CUSTOMER";
-
-export async function getMockSession() {
+/**
+ * Resolves the authenticated user.
+ */
+export async function getAuthenticatedUser(): Promise<User | null> {
   const cookieStore = await cookies();
-  const mockRole = cookieStore.get("evo_mock_role")?.value as UserRole | undefined;
+  const token = cookieStore.get("evo_session")?.value;
+  const payload = await decrypt(token);
 
-  if (!mockRole) {
-    return null;
+  if (payload) {
+    return db.user.findUnique({
+      where: { id: payload.userId },
+    });
   }
+
+  // Fallback to mock auth if enabled
+  if (process.env.ALLOW_MOCK_AUTH === "true") {
+    const mockRole = cookieStore.get("evo_mock_role")?.value as Role | undefined;
+    const mockEmail = cookieStore.get("evo_mock_user_email")?.value;
+
+    if (mockRole && mockEmail) {
+      return db.user.findUnique({
+        where: { email: mockEmail },
+      });
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Legacy/Staged compatibility helper.
+ * Returns a minimal session object.
+ */
+export async function getMockSession() {
+  const user = await getAuthenticatedUser();
+  if (!user) return null;
 
   return {
     user: {
-      role: mockRole,
-      email: mockRole === "OWNER" ? "owner@evomotors.com" : "customer@evomotors.com",
+      id: user.id,
+      role: user.role,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
     },
   };
 }
 
-export async function hasRole(role: UserRole) {
-  const session = await getMockSession();
-  return session?.user.role === role;
+/**
+ * Check if the current user has a specific role.
+ */
+export async function hasRole(role: Role) {
+  const user = await getAuthenticatedUser();
+  return user?.role === role;
 }

@@ -1,4 +1,8 @@
 node_modules
 .next
 .env
+.env.*
+.cursor/
 /src/generated/prisma
+
+storage/

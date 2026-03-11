@@ -1,10 +1,132 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { loginAction } from "@/actions/auth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { CarFront, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold tracking-tight">Login Page (Placeholder)</h1>
-      <p className="mt-4 text-muted-foreground italic">
-        Set "evo_mock_role" cookie to "OWNER" or "CUSTOMER" to simulate auth.
-      </p>
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-[#FDFDFD] flex items-center justify-center p-6">
+        <Loader2 className="h-10 w-10 animate-spin text-primary/20" />
+      </div>
+    }>
+      <LoginForm />
+    </React.Suspense>
+  );
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from") || "";
+  const [error, setError] = React.useState<string | null>(null);
+  const [isPending, setIsPending] = React.useState(false);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsPending(true);
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const result = await loginAction(formData);
+
+    if (result?.error) {
+      setError(result.error);
+      setIsPending(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FDFDFD] flex items-center justify-center p-6">
+      <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        {/* Brand Logo */}
+        <div className="flex flex-col items-center gap-4">
+          <Link href="/" className="group flex items-center gap-2">
+            <div className="bg-primary/5 p-2 rounded-xl group-hover:bg-primary/10 transition-colors">
+              <CarFront className="h-8 w-8 text-primary" />
+            </div>
+            <span className="text-3xl font-black uppercase tracking-tighter italic">
+              Evo<span className="text-primary">Motors</span>
+            </span>
+          </Link>
+          <div className="text-center">
+            <h1 className="text-2xl font-black uppercase tracking-tight italic">Welcome Back</h1>
+            <p className="text-sm text-muted-foreground font-medium italic mt-1">Sign in to access your portal</p>
+          </div>
+        </div>
+
+        <Card className="rounded-[2.5rem] border-2 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.08)] overflow-hidden border-primary/5">
+          <CardHeader className="bg-primary/5 pb-8 pt-10 px-10 text-center">
+            <CardTitle className="text-xl font-black uppercase tracking-tight italic">Account Login</CardTitle>
+          </CardHeader>
+          <CardContent className="p-10">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <input type="hidden" name="from" value={from} />
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Email Address</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  required
+                  className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Password</Label>
+                </div>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="••••••••"
+                  required
+                  className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20"
+                />
+              </div>
+
+              {error && (
+                <div className="bg-destructive/5 border-2 border-destructive/10 p-4 rounded-2xl flex items-center gap-3 text-destructive animate-in shake duration-500">
+                  <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-tight leading-none">{error}</p>
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="w-full rounded-full h-14 font-black uppercase tracking-widest shadow-xl group bg-[#1A1A1A] hover:bg-[#2A2A2A] disabled:opacity-50"
+              >
+                {isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    Sign In
+                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </Button>
+            </form>
+          </CardContent>
+          <CardFooter className="bg-muted/30 border-t-2 border-primary/5 p-8 justify-center">
+            <p className="text-xs font-bold text-muted-foreground italic">
+              Don&apos;t have an account?{" "}
+              <Link href="/register" className="text-primary hover:underline underline-offset-4 font-black uppercase tracking-widest ml-1">
+                Register
+              </Link>
+            </p>
+          </CardFooter>
+        </Card>
+
+      </div>
     </div>
   );
 }
