@@ -8,10 +8,14 @@ export { Prisma };
 // These are standardized shapes for common app needs (e.g. including relations)
 
 /**
- * Vehicle with its gallery media
+ * Vehicle with its gallery media, organization context, and inquiry count
  */
 export type VehicleWithMedia = Prisma.VehicleGetPayload<{
-  include: { media: true };
+  include: { 
+    media: true; 
+    organization: { select: { id: true; name: true; slug: true; phone: true } };
+    _count: { select: { inquiries: true } };
+  };
 }>;
 
 /**

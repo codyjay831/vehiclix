@@ -17,6 +17,7 @@ export type SessionPayload = {
   userId: string;
   role: Role;
   email: string;
+  organizationId?: string | null;
   expiresAt: Date;
   isTwoFactorVerified: boolean;
 };

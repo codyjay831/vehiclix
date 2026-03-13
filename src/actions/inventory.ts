@@ -9,6 +9,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { logAuditEvent } from "@/lib/audit";
+import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "inventory");
 
@@ -34,12 +35,16 @@ export async function isVinUnique(vin: string, excludeId?: string): Promise<bool
  * Media management is excluded from this pass.
  */
 export async function updateVehicleAction(vehicleId: string, formData: FormData) {
+  const user = await requireUserWithOrg();
+  
   const vehicle = await db.vehicle.findUnique({
     where: { id: vehicleId },
-    select: { vehicleStatus: true },
+    select: { vehicleStatus: true, organizationId: true },
   });
 
-  if (!vehicle) throw new Error("Vehicle not found");
+  if (!vehicle || vehicle.organizationId !== user.organizationId) {
+    throw new Error("Vehicle not found or access denied");
+  }
   if (LOCKED_STATUSES.includes(vehicle.vehicleStatus)) {
     throw new Error(`Vehicle is in ${vehicle.vehicleStatus} status and cannot be edited.`);
   }
@@ -114,6 +119,7 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
       eventType: "vehicle.updated",
       entityType: "Vehicle",
       entityId: vehicleId,
+      organizationId: user.organizationId,
       actorRole: "OWNER",
       metadata: { changedFields: Array.from(formData.keys()) },
     });
@@ -131,14 +137,18 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
  * Only allows transitions between DRAFT, LISTED, and ARCHIVED.
  */
 export async function updateVehicleStatusAction(vehicleId: string, newStatus: VehicleStatus) {
+  const user = await requireUserWithOrg();
+
   const vehicle = await db.vehicle.findUnique({
     where: { id: vehicleId },
-    select: { vehicleStatus: true },
+    select: { vehicleStatus: true, organizationId: true },
   });
 
-  if (!vehicle) throw new Error("Vehicle not found");
+  if (!vehicle || vehicle.organizationId !== user.organizationId) {
+    throw new Error("Vehicle not found or access denied");
+  }
 
-  const allowedStatuses: VehicleStatus[] = ["DRAFT", "LISTED", "ARCHIVED"];
+  const allowedStatuses: VehicleStatus[] = ["DRAFT", "LISTED", "ARCHIVED", "SOLD"];
   
   if (!allowedStatuses.includes(vehicle.vehicleStatus)) {
     throw new Error(`Manual status changes are not allowed for vehicles in ${vehicle.vehicleStatus} status.`);
@@ -158,6 +168,7 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
       eventType: "vehicle.status_changed",
       entityType: "Vehicle",
       entityId: vehicleId,
+      organizationId: user.organizationId,
       actorRole: "OWNER",
       metadata: { from: vehicle.vehicleStatus, to: newStatus },
     });
@@ -242,6 +253,11 @@ export async function createVehicleAction(formData: FormData) {
     });
   }
 
+  const user = await getAuthenticatedUser();
+  if (!user || !user.organizationId) {
+    throw new Error("Unauthorized: Organization context required");
+  }
+
   // Database Transaction
   await db.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
@@ -264,6 +280,7 @@ export async function createVehicleAction(formData: FormData) {
         features,
         internalNotes,
         vehicleStatus: status,
+        organizationId: user.organizationId!,
         media: {
           createMany: {
             data: mediaRecords,
@@ -278,6 +295,8 @@ export async function createVehicleAction(formData: FormData) {
         eventType: isPublishing ? "vehicle.published" : "vehicle.created",
         entityType: "Vehicle",
         entityId: vehicle.id,
+        organizationId: user.organizationId!,
+        actorId: user.id,
         actorRole: "OWNER",
         metadata: { status: vehicle.vehicleStatus },
       },
@@ -286,4 +305,29 @@ export async function createVehicleAction(formData: FormData) {
 
   revalidatePath("/admin/inventory");
   redirect("/admin/inventory");
+}
+
+/**
+ * Increments the view count for a vehicle.
+ */
+export async function trackVehicleViewAction(vehicleId: string) {
+  // Public action, no auth required
+  await db.vehicle.update({
+    where: { id: vehicleId },
+    data: { views: { increment: 1 } },
+  });
+}
+
+/**
+ * Increments the share count for a vehicle.
+ */
+export async function trackVehicleShareAction(vehicleId: string) {
+  // Usually triggered by admin share actions, but can be public
+  await db.vehicle.update({
+    where: { id: vehicleId },
+    data: { shares: { increment: 1 } },
+  });
+  
+  revalidatePath("/admin/inventory");
+  revalidatePath(`/admin/inventory/${vehicleId}`);
 }

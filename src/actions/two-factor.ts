@@ -5,16 +5,18 @@ import { decryptSecret } from "@/lib/encryption";
 import { decrypt, encrypt } from "@/lib/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { authenticator } from "otplib";
+import { TOTP } from "otplib";
+const authenticator = new TOTP();
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
+import { getDefaultOrganization } from "@/lib/organization";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
 /**
  * Re-issues the session cookie with the isTwoFactorVerified flag set to true.
  */
-async function setVerifiedSessionCookie(session: { userId: string; role: Role; email: string }) {
+async function setVerifiedSessionCookie(session: { userId: string; role: Role; email: string; organizationId?: string | null }) {
   const expiresAt = new Date(
     Date.now() + (session.role === Role.OWNER ? 8 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
   );
@@ -23,6 +25,7 @@ async function setVerifiedSessionCookie(session: { userId: string; role: Role; e
     userId: session.userId,
     role: session.role,
     email: session.email,
+    organizationId: session.organizationId,
     expiresAt,
     isTwoFactorVerified: true,
   });
@@ -65,20 +68,25 @@ export async function verify2FAAction(formData: FormData) {
   }
 
   const decryptedSecret = decryptSecret(user.twoFactorSecret);
-  const isValid = authenticator.check(code, decryptedSecret);
+  const result = await authenticator.verify(code, { secret: decryptedSecret });
+  const isValid = result.valid;
 
   if (!isValid) {
+    const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
     await logAuditEvent({
       eventType: "auth.2fa_failed",
       actorId: user.id,
       actorRole: user.role,
       entityType: "User",
       entityId: user.id,
+      organizationId: org.id,
     });
     return { error: "Invalid verification code" };
   }
 
   await setVerifiedSessionCookie(session);
+
+  const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
 
   await logAuditEvent({
     eventType: "auth.2fa_verified",
@@ -86,6 +94,7 @@ export async function verify2FAAction(formData: FormData) {
     actorRole: user.role,
     entityType: "User",
     entityId: user.id,
+    organizationId: org.id,
   });
 
   redirect(from);

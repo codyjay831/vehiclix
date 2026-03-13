@@ -28,6 +28,7 @@ export async function GET(
       deal: {
         select: {
           userId: true,
+          organizationId: true,
         },
       },
     },
@@ -43,12 +44,15 @@ export async function GET(
     if (document.deal.userId !== user.id) {
       return new NextResponse("Forbidden: Access denied to this document", { status: 403 });
     }
-  } else if (user.role !== "OWNER") {
+  } else if (user.role === "OWNER") {
+    // Owner can only access documents belonging to their organization
+    if (document.deal.organizationId !== user.organizationId) {
+      return new NextResponse("Forbidden: Access denied to this document", { status: 403 });
+    }
+  } else {
     // Other roles are strictly forbidden
     return new NextResponse("Forbidden", { status: 403 });
   }
-
-  // OWNER access is implicitly allowed if we've reached this point and user.role === "OWNER"
 
   const filePath = path.join(STORAGE_DIR, document.fileUrl);
 

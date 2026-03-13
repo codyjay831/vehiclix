@@ -48,6 +48,7 @@ export async function getMockSession() {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      organizationId: user.organizationId,
     },
   };
 }
@@ -58,4 +59,48 @@ export async function getMockSession() {
 export async function hasRole(role: Role) {
   const user = await getAuthenticatedUser();
   return user?.role === role;
+}
+
+/**
+ * Requires an authenticated user with an associated organization.
+ * Throws an error if not authenticated or no organization is present.
+ * For Owners/Staff, this is a non-negotiable requirement.
+ */
+export async function requireUserWithOrg() {
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    throw new Error("Authentication required");
+  }
+  
+  if (!user.organizationId) {
+    // If they are an OWNER, this is a critical configuration error.
+    if (user.role === Role.OWNER) {
+      throw new Error("Critical: Owner account has no associated organization");
+    }
+    throw new Error("Organization context required");
+  }
+  
+  return user as User & { organizationId: string };
+}
+
+/**
+ * Ensures the record with the given ID belongs to the specified organization.
+ * This is a critical guard for multi-tenant isolation.
+ */
+export async function validateRecordOwnership(
+  model: any,
+  id: string,
+  organizationId: string,
+  errorMessage = "Resource not found or access denied"
+) {
+  const record = await model.findUnique({
+    where: { id },
+    select: { organizationId: true },
+  });
+
+  if (!record || record.organizationId !== organizationId) {
+    throw new Error(errorMessage);
+  }
+
+  return record;
 }

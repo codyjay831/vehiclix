@@ -9,26 +9,50 @@ datasource db {
   provider = "postgresql"
 }
 
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  vehicles        Vehicle[]
+  deals           Deal[]
+  inquiries       VehicleInquiry[]
+  vehicleRequests VehicleRequest[]
+  activityEvents  ActivityEvent[]
+  tradeInCaptures TradeInCapture[]
+  energyRequests  EnergyServiceRequest[]
+}
+
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  firstName       String
-  lastName        String
-  phone           String?
-  passwordHash    String?   // null for stub accounts
-  emailVerifiedAt DateTime? // null if not verified
-  role            Role      @default(CUSTOMER)
-  isStub          Boolean   @default(false)
+  id               String    @id @default(uuid())
+  email            String    @unique
+  firstName        String
+  lastName         String
+  phone            String?
+  passwordHash     String? // null for stub accounts
+  emailVerifiedAt  DateTime? // null if not verified
+  role             Role      @default(CUSTOMER)
+  isStub           Boolean   @default(false)
   twoFactorEnabled Boolean   @default(false)
-  twoFactorSecret  String?   // Encrypted base32 secret
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  twoFactorSecret  String? // Encrypted base32 secret
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Tenant ownership (optional for Customers, required for Staff/Owners in Phase 2 logic)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   deals                 Deal[]
   vehicleRequests       VehicleRequest[]
   energyServiceRequests EnergyServiceRequest[]
   inquiries             VehicleInquiry[]
   tradeInCaptures       TradeInCapture[]
+
+  @@index([organizationId])
 }
 
 model Vehicle {
@@ -47,12 +71,18 @@ model Vehicle {
   titleStatus          TitleStatus
   price                Decimal            @db.Decimal(12, 2)
   description          String?
-  highlights           String[]           // array of highlight strings
-  features             String[]           // selected feature checklist items
+  highlights           String[] // array of highlight strings
+  features             String[] // selected feature checklist items
   internalNotes        String?
   vehicleStatus        VehicleStatus      @default(DRAFT)
+  views                Int                @default(0)
+  shares               Int                @default(0)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
   media           VehicleMedia[]
   documents       VehicleDocument[]
@@ -61,6 +91,7 @@ model Vehicle {
   tradeInCaptures TradeInCapture[]
 
   @@index([vehicleStatus])
+  @@index([organizationId])
 }
 
 model VehicleMedia {
@@ -91,8 +122,8 @@ model VehicleDocument {
 model VehicleInquiry {
   id                String        @id @default(uuid())
   vehicleId         String
-  userId            String?       // optional link to a registered user
-  firstName         String        // denormalized submitted info
+  userId            String? // optional link to a registered user
+  firstName         String // denormalized submitted info
   lastName          String
   email             String
   phone             String
@@ -105,24 +136,29 @@ model VehicleInquiry {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   vehicle         Vehicle          @relation(fields: [vehicleId], references: [id])
   user            User?            @relation(fields: [userId], references: [id])
   tradeInCaptures TradeInCapture[]
 
   @@index([vehicleId])
   @@index([userId])
+  @@index([organizationId])
   @@index([vehicleId, email, createdAt])
 }
 
 model TradeInCapture {
   id            String           @id @default(uuid())
-  userId        String?          // optional link to a registered user
-  firstName     String           // denormalized submitted info
+  userId        String? // optional link to a registered user
+  firstName     String // denormalized submitted info
   lastName      String
   email         String
   phone         String
-  vehicleId     String?          // the vehicle being viewed (context)
-  inquiryId     String?          // linked inquiry if applicable
+  vehicleId     String? // the vehicle being viewed (context)
+  inquiryId     String? // linked inquiry if applicable
   year          Int
   make          String
   model         String
@@ -133,6 +169,10 @@ model TradeInCapture {
   notes         String?
   createdAt     DateTime         @default(now())
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   user    User?           @relation(fields: [userId], references: [id])
   vehicle Vehicle?        @relation(fields: [vehicleId], references: [id])
   inquiry VehicleInquiry? @relation(fields: [inquiryId], references: [id])
@@ -140,6 +180,7 @@ model TradeInCapture {
   @@index([userId])
   @@index([vehicleId])
   @@index([inquiryId])
+  @@index([organizationId])
 }
 
 model VehicleRequest {
@@ -163,10 +204,15 @@ model VehicleRequest {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   user      User              @relation(fields: [userId], references: [id])
   proposals VehicleProposal[]
 
   @@index([userId])
+  @@index([organizationId])
 }
 
 model VehicleProposal {
@@ -198,6 +244,10 @@ model Deal {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   vehicle        Vehicle                @relation(fields: [vehicleId], references: [id])
   user           User                   @relation(fields: [userId], references: [id])
   deposits       DealDeposit[]
@@ -207,6 +257,7 @@ model Deal {
 
   @@index([vehicleId])
   @@index([userId])
+  @@index([organizationId])
 }
 
 model DealDeposit {
@@ -258,19 +309,24 @@ model EnergyServiceRequest {
   notes           String?
   createdAt       DateTime            @default(now())
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   user          User                         @relation(fields: [userId], references: [id])
   deal          Deal?                        @relation(fields: [dealId], references: [id])
   statusHistory EnergyServiceStatusHistory[]
 
   @@index([userId])
   @@index([dealId])
+  @@index([organizationId])
 }
 
 model EnergyServiceStatusHistory {
   id        String              @id @default(uuid())
   requestId String
   status    EnergyServiceStatus
-  changedBy String?             // User ID of owner who changed it
+  changedBy String? // User ID of owner who changed it
   timestamp DateTime            @default(now())
 
   request EnergyServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
@@ -288,7 +344,12 @@ model ActivityEvent {
   metadata   Json?
   createdAt  DateTime @default(now())
 
+  // Tenant ownership
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   @@index([entityType, entityId])
+  @@index([organizationId])
 }
 
 // --- ENUMS ---

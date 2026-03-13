@@ -26,6 +26,7 @@ interface AuditLogOptions {
   entityType: string;
   entityId: string;
   metadata?: any;
+  organizationId: string; // Required for multi-tenant hardening
 }
 
 /**
@@ -38,6 +39,7 @@ export async function logAuditEvent({
   entityType,
   entityId,
   metadata,
+  organizationId,
 }: AuditLogOptions) {
   try {
     return await db.activityEvent.create({
@@ -48,6 +50,7 @@ export async function logAuditEvent({
         entityType,
         entityId,
         metadata: metadata || {},
+        organizationId,
       },
     });
   } catch (error) {

@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
-import { Navbar } from "@/components/public/Navbar";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { BRANDING } from "@/config/branding";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,19 +16,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Evo Motors",
-    default: "Evo Motors | Premium EV Showroom",
+    template: BRANDING.metadata.titleTemplate,
+    default: BRANDING.metadata.defaultTitle,
   },
-  description: "Boutique electric vehicle dealership and home energy solutions.",
+  description: BRANDING.description,
   icons: {
     icon: "/favicon.ico",
   },
   openGraph: {
-    title: "Evo Motors | Premium EV Showroom",
-    description: "Boutique electric vehicle dealership and home energy solutions.",
+    title: BRANDING.metadata.defaultTitle,
+    description: BRANDING.description,
     type: "website",
     locale: "en_US",
-    siteName: "Evo Motors",
+    siteName: BRANDING.companyName,
   },
 };
 
@@ -40,14 +39,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const user = await getAuthenticatedUser();
-
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
-        <Navbar userRole={user?.role || null} />
         {children}
         <Toaster />
       </body>

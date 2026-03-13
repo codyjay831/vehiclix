@@ -5,8 +5,9 @@ import { DealFullPayload, DealStatus } from "@/types";
  * Fetches all deals for the admin dashboard.
  * Includes associated vehicle, user, and latest deposit status.
  */
-export async function getAdminDeals() {
+export async function getAdminDeals(organizationId: string) {
   return db.deal.findMany({
+    where: { organizationId },
     include: {
       vehicle: true,
       user: true,
@@ -26,9 +27,9 @@ export async function getAdminDeals() {
 /**
  * Fetches a single deal by ID with full context for the detail view.
  */
-export async function getAdminDealDetail(id: string) {
+export async function getAdminDealDetail(organizationId: string, id: string) {
   return db.deal.findUnique({
-    where: { id },
+    where: { id, organizationId },
     include: {
       vehicle: true,
       user: true,
@@ -54,11 +55,12 @@ export async function getAdminDealDetail(id: string) {
 /**
  * Fetches activity events for a specific deal.
  */
-export async function getDealActivity(dealId: string) {
+export async function getDealActivity(organizationId: string, dealId: string) {
   return db.activityEvent.findMany({
     where: {
       entityType: "Deal",
       entityId: dealId,
+      organizationId,
     },
     orderBy: {
       createdAt: "desc",

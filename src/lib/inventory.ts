@@ -5,14 +5,28 @@ import { VehicleWithMedia, VehicleStatus, Prisma } from "@/types";
  * Fetches all vehicles for the admin inventory dashboard.
  * Includes associated media to display thumbnails.
  */
-export async function getAdminInventory(): Promise<VehicleWithMedia[]> {
+export async function getAdminInventory(organizationId: string): Promise<VehicleWithMedia[]> {
   return db.vehicle.findMany({
+    where: { organizationId },
     include: {
       media: {
         orderBy: {
           displayOrder: "asc",
         },
         take: 1, // Only need the primary thumbnail for the table
+      },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          phone: true,
+        },
+      },
+      _count: {
+        select: {
+          inquiries: true,
+        },
       },
     },
     orderBy: {
@@ -23,11 +37,39 @@ export async function getAdminInventory(): Promise<VehicleWithMedia[]> {
 
 /**
  * Fetches a single vehicle for admin editing.
- * Includes all fields but excludes media management for this pass.
  */
-export async function getVehicleForEdit(id: string) {
+export async function getVehicleForEdit(organizationId: string, id: string) {
   return db.vehicle.findUnique({
-    where: { id },
+    where: { id, organizationId },
+  });
+}
+
+/**
+ * Fetches a single vehicle with organization context, media, and metrics for admin view.
+ */
+export async function getAdminVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
+  return db.vehicle.findUnique({
+    where: { id, organizationId },
+    include: {
+      media: {
+        orderBy: {
+          displayOrder: "asc",
+        },
+      },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          phone: true,
+        },
+      },
+      _count: {
+        select: {
+          inquiries: true,
+        },
+      },
+    },
   });
 }
 
@@ -35,14 +77,18 @@ export async function getVehicleForEdit(id: string) {
  * Fetches publicly available inventory with optional filters.
  * Filters for LISTED vehicles and includes their primary media.
  */
-export async function getPublicInventory(filters?: {
-  make?: string;
-  maxPrice?: number;
-  minYear?: number;
-  sort?: string;
-  search?: string;
-}): Promise<VehicleWithMedia[]> {
+export async function getPublicInventory(
+  organizationId: string,
+  filters?: {
+    make?: string;
+    maxPrice?: number;
+    minYear?: number;
+    sort?: string;
+    search?: string;
+  }
+): Promise<VehicleWithMedia[]> {
   const where: Prisma.VehicleWhereInput = {
+    organizationId,
     vehicleStatus: "LISTED" as VehicleStatus,
   };
 
@@ -86,6 +132,19 @@ export async function getPublicInventory(filters?: {
         },
         take: 1,
       },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          phone: true,
+        },
+      },
+      _count: {
+        select: {
+          inquiries: true,
+        },
+      },
     },
     orderBy,
   });
@@ -94,9 +153,12 @@ export async function getPublicInventory(filters?: {
 /**
  * Gets a unique list of all makes from listed inventory.
  */
-export async function getPublicMakes(): Promise<string[]> {
+export async function getPublicMakes(organizationId: string): Promise<string[]> {
   const result = await db.vehicle.findMany({
-    where: { vehicleStatus: "LISTED" as VehicleStatus },
+    where: { 
+      organizationId,
+      vehicleStatus: "LISTED" as VehicleStatus 
+    },
     select: { make: true },
     distinct: ["make"],
     orderBy: { make: "asc" },
@@ -107,9 +169,10 @@ export async function getPublicMakes(): Promise<string[]> {
 /**
  * Fetches the 3 most recently created LISTED vehicles for the homepage.
  */
-export async function getFeaturedInventory(): Promise<VehicleWithMedia[]> {
+export async function getFeaturedInventory(organizationId: string): Promise<VehicleWithMedia[]> {
   return db.vehicle.findMany({
     where: {
+      organizationId,
       vehicleStatus: "LISTED" as VehicleStatus,
     },
     include: {
@@ -118,6 +181,19 @@ export async function getFeaturedInventory(): Promise<VehicleWithMedia[]> {
           displayOrder: "asc",
         },
         take: 1,
+      },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          phone: true,
+        },
+      },
+      _count: {
+        select: {
+          inquiries: true,
+        },
       },
     },
     orderBy: {
@@ -131,16 +207,30 @@ export async function getFeaturedInventory(): Promise<VehicleWithMedia[]> {
  * Fetches a single vehicle by ID for the public VDP.
  * Strictly filters for LISTED vehicles.
  */
-export async function getPublicVehicleDetail(id: string): Promise<VehicleWithMedia | null> {
+export async function getPublicVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
   return db.vehicle.findFirst({
     where: {
       id,
+      organizationId,
       vehicleStatus: "LISTED" as VehicleStatus,
     },
     include: {
       media: {
         orderBy: {
           displayOrder: "asc",
+        },
+      },
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          phone: true,
+        },
+      },
+      _count: {
+        select: {
+          inquiries: true,
         },
       },
     },

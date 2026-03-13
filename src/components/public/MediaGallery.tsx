@@ -37,7 +37,7 @@ export function MediaGallery({ media }: MediaGalleryProps) {
       {/* Hero Image */}
       <div className="relative aspect-[3/2] overflow-hidden rounded-2xl bg-muted group cursor-zoom-in">
         <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
-          <DialogTrigger>
+          <DialogTrigger asChild>
             <img
               src={activeImage.url}
               alt="Vehicle Hero"

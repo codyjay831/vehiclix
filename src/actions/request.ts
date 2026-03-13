@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { VehicleRequestStatus, Role, Prisma, Priority } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { getDefaultOrganization } from "@/lib/organization";
 
 interface VehicleRequestData {
   make: string;
@@ -52,7 +53,11 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
   // Identity Resolution (Stub Account)
   let user = await db.user.findUnique({
     where: { email: email.toLowerCase() },
+    select: { id: true, organizationId: true },
   });
+
+  // Resolve organization (default for Phase 2)
+  const org = await getDefaultOrganization();
 
   if (!user) {
     user = await db.user.create({
@@ -63,7 +68,14 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
         phone,
         role: Role.CUSTOMER,
         isStub: true,
+        organizationId: org.id,
       },
+    });
+  } else if (!user.organizationId) {
+    // If an existing stub account is missing an organization, assign it based on this request
+    user = await db.user.update({
+      where: { id: user.id },
+      data: { organizationId: org.id },
     });
   }
 
@@ -71,6 +83,7 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
   const request = await db.vehicleRequest.create({
     data: {
       userId: user.id,
+      organizationId: org.id,
       make,
       model,
       yearMin,
@@ -93,6 +106,7 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
       eventType: "request.submitted",
       entityType: "VehicleRequest",
       entityId: request.id,
+      organizationId: org.id,
       actorId: user.id,
       actorRole: Role.CUSTOMER,
       metadata: {
@@ -110,18 +124,15 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
  * Updates a vehicle request's status and logs the event.
  */
 export async function updateRequestStatusAction(id: string, newStatus: VehicleRequestStatus) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const request = await db.vehicleRequest.findUnique({
     where: { id },
-    select: { requestStatus: true },
+    select: { requestStatus: true, organizationId: true },
   });
 
-  if (!request) {
-    throw new Error("Request not found");
+  if (!request || request.organizationId !== user.organizationId) {
+    throw new Error("Request not found or access denied");
   }
 
   const currentStatus = request.requestStatus;
@@ -156,6 +167,7 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
               eventType,
               entityType: "VehicleRequest",
               entityId: id,
+              organizationId: user.organizationId,
               actorRole: Role.OWNER,
               metadata: { previousStatus: currentStatus },
             },
@@ -173,9 +185,15 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
  * Updates the internal priority of a vehicle request.
  */
 export async function updateRequestPriorityAction(id: string, priority: Priority) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
+  const user = await requireUserWithOrg();
+
+  const request = await db.vehicleRequest.findUnique({
+    where: { id },
+    select: { organizationId: true },
+  });
+
+  if (!request || request.organizationId !== user.organizationId) {
+    throw new Error("Request not found or access denied");
   }
 
   await db.vehicleRequest.update({
@@ -191,9 +209,15 @@ export async function updateRequestPriorityAction(id: string, priority: Priority
  * Updates the owner's internal notes for a vehicle request.
  */
 export async function updateRequestNotesAction(id: string, notes: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
+  const user = await requireUserWithOrg();
+
+  const request = await db.vehicleRequest.findUnique({
+    where: { id },
+    select: { organizationId: true },
+  });
+
+  if (!request || request.organizationId !== user.organizationId) {
+    throw new Error("Request not found or access denied");
   }
 
   await db.vehicleRequest.update({

@@ -32,13 +32,18 @@ export async function POST(request: NextRequest) {
     try {
       const envelope = await db.docuSignEnvelope.findUnique({
         where: { envelopeId },
-        select: { dealId: true },
+        select: { 
+          dealId: true,
+          deal: { select: { organizationId: true } }
+        },
       });
 
-      if (!envelope) {
-        console.warn(`DocuSign webhook: Envelope ${envelopeId} not found in database.`);
-        return new NextResponse("Envelope not found", { status: 404 });
+      if (!envelope || !(envelope.deal as any).organizationId) {
+        console.warn(`DocuSign webhook: Envelope ${envelopeId} or its deal/organization not found.`);
+        return new NextResponse("Envelope or deal not found", { status: 404 });
       }
+
+      const organizationId = (envelope.deal as any).organizationId;
 
       await db.$transaction([
         // 1. Update envelope status
@@ -60,6 +65,7 @@ export async function POST(request: NextRequest) {
             eventType: "deal.contracts_signed",
             entityType: "Deal",
             entityId: envelope.dealId,
+            organizationId,
             metadata: { envelopeId },
           },
         }),

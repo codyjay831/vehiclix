@@ -7,7 +7,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Menu, X, CarFront, LogOut } from "lucide-react";
 import { Role } from "@prisma/client";
-import { logoutAction } from "@/actions/auth";
+import { LogoutButton } from "@/components/auth/LogoutButton";
+
+import { BRANDING } from "@/config/branding";
 
 interface NavbarProps {
   userRole?: Role | null;
@@ -23,11 +25,6 @@ export function Navbar({ userRole }: NavbarProps) {
     { label: "About", href: "/about" },
   ];
 
-  const isAdmin = pathname.startsWith("/admin");
-  const isPortal = pathname.startsWith("/portal");
-
-  if (isAdmin || isPortal) return null; // Admin and Portal have their own layouts
-
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
@@ -38,7 +35,7 @@ export function Navbar({ userRole }: NavbarProps) {
               <CarFront className="h-6 w-6" />
             </div>
             <span className="text-xl font-black uppercase tracking-tighter">
-              Evo <span className="text-primary">Motors</span>
+              {BRANDING.companyName.split(' ')[0]} <span className="text-primary">{BRANDING.companyName.split(' ')[1]}</span>
             </span>
           </Link>
 
@@ -58,7 +55,8 @@ export function Navbar({ userRole }: NavbarProps) {
             ))}
             <div className="h-6 w-px bg-border mx-2" />
             
-            {!userRole ? (
+            {/* Desktop Auth Section */}
+            {(!userRole || (userRole !== Role.OWNER && userRole !== Role.CUSTOMER)) ? (
               <Link href="/login">
                 <Button variant="ghost" className="font-bold uppercase tracking-widest text-xs">
                   Login
@@ -71,11 +69,7 @@ export function Navbar({ userRole }: NavbarProps) {
                     {userRole === Role.OWNER ? "Admin" : "Portal"}
                   </Button>
                 </Link>
-                <form action={logoutAction}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                    <LogOut className="h-4 w-4" />
-                  </Button>
-                </form>
+                <LogoutButton variant="icon" />
               </div>
             )}
 
@@ -111,7 +105,8 @@ export function Navbar({ userRole }: NavbarProps) {
               </Link>
             ))}
             <div className="pt-4 flex flex-col gap-4">
-              {!userRole ? (
+              {/* Mobile Auth Section */}
+              {(!userRole || (userRole !== Role.OWNER && userRole !== Role.CUSTOMER)) ? (
                 <Link href="/login" onClick={() => setIsOpen(false)}>
                   <Button variant="outline" className="w-full rounded-full h-12 font-bold uppercase tracking-widest">
                     Login
@@ -124,12 +119,7 @@ export function Navbar({ userRole }: NavbarProps) {
                       {userRole === Role.OWNER ? "Admin" : "Portal"}
                     </Button>
                   </Link>
-                  <form action={logoutAction} className="w-full">
-                    <Button variant="ghost" className="w-full font-bold uppercase tracking-widest text-muted-foreground hover:text-destructive">
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Logout
-                    </Button>
-                  </form>
+                  <LogoutButton variant="full" onLogout={() => setIsOpen(false)} />
                 </>
               )}
               <Link href="/inventory" onClick={() => setIsOpen(false)}>

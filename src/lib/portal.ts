@@ -15,10 +15,15 @@ export async function resolvePortalIdentity() {
 /**
  * Fetches the most recent active (non-final) deal for the customer.
  */
-export async function getActiveDeal(userId: string) {
+export async function getActiveDeal(userId: string, organizationId?: string | null) {
+  if (!organizationId) {
+    throw new Error("Organization context required for portal access");
+  }
+
   return db.deal.findFirst({
     where: {
       userId,
+      organizationId,
       NOT: {
         dealStatus: {
           in: [DealStatus.COMPLETED, DealStatus.CANCELLED],
@@ -46,10 +51,15 @@ export async function getActiveDeal(userId: string) {
 /**
  * Fetches recent vehicle inquiries submitted by the customer.
  */
-export async function getRecentInquiries(userId: string) {
+export async function getRecentInquiries(userId: string, organizationId?: string | null) {
+  if (!organizationId) {
+    throw new Error("Organization context required for portal access");
+  }
+
   return db.vehicleInquiry.findMany({
     where: {
       userId,
+      organizationId,
     },
     include: {
       vehicle: true,
@@ -64,10 +74,15 @@ export async function getRecentInquiries(userId: string) {
 /**
  * Fetches recent vehicle requests submitted by the customer.
  */
-export async function getRecentRequests(userId: string) {
+export async function getRecentRequests(userId: string, organizationId?: string | null) {
+  if (!organizationId) {
+    throw new Error("Organization context required for portal access");
+  }
+
   return db.vehicleRequest.findMany({
     where: {
       userId,
+      organizationId,
     },
     orderBy: {
       createdAt: "desc",

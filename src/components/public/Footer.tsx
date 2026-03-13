@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CarFront, Mail, Phone, MapPin, Instagram, Twitter, Linkedin } from "lucide-react";
 
+import { BRANDING } from "@/config/branding";
+
 export function Footer() {
   return (
     <footer className="bg-muted/30 border-t pt-20 pb-10">
@@ -13,12 +15,11 @@ export function Footer() {
                 <CarFront className="h-5 w-5" />
               </div>
               <span className="text-xl font-black uppercase tracking-tighter">
-                Evo <span className="text-primary">Motors</span>
+                {BRANDING.companyName.split(' ')[0]} <span className="text-primary">{BRANDING.companyName.split(' ')[1]}</span>
               </span>
             </Link>
             <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">
-              Redefining the used EV experience through curated inventory, 
-              transparent specs, and home energy integration.
+              {BRANDING.description}
             </p>
             <div className="flex gap-4">
               {/* Social links hidden until real profiles exist */}
@@ -51,15 +52,15 @@ export function Footer() {
             <ul className="space-y-4 text-sm">
               <li className="flex items-center gap-3 text-muted-foreground">
                 <Mail className="h-4 w-4" />
-                <span>hello@evomotors.com</span>
+                <span>{BRANDING.contact.email}</span>
               </li>
               <li className="flex items-center gap-3 text-muted-foreground">
                 <Phone className="h-4 w-4" />
-                <span>(555) 123-4567</span>
+                <span>{BRANDING.contact.phone}</span>
               </li>
               <li className="flex items-center gap-3 text-muted-foreground">
                 <MapPin className="h-4 w-4" />
-                <span>123 EV Way, Silicon Valley, CA</span>
+                <span>{BRANDING.contact.address}</span>
               </li>
             </ul>
           </div>
@@ -67,7 +68,7 @@ export function Footer() {
 
         <div className="border-t pt-10 flex flex-col md:flex-row justify-between items-center gap-6">
           <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
-            © 2026 Evo Motors. All Rights Reserved.
+            © 2026 {BRANDING.companyName}. All Rights Reserved.
           </p>
           <div className="flex gap-8 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
             <Link href="/privacy" className="hover:text-primary">Privacy Policy</Link>

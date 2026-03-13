@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { DealStatus, VehicleStatus, Role, DocumentStatus, EnvelopeStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { createMockEnvelope } from "@/lib/docusign";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { requireUserWithOrg } from "@/lib/auth";
 
 /**
  * Valid transitions for deal status.
@@ -32,17 +32,16 @@ const CANCELLABLE_STATES: DealStatus[] = [
 ];
 
 export async function updateDealStatusAction(dealId: string, nextStatus: DealStatus) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const deal = await db.deal.findUnique({
     where: { id: dealId },
-    select: { dealStatus: true, vehicleId: true },
+    select: { dealStatus: true, vehicleId: true, organizationId: true },
   });
 
-  if (!deal) throw new Error("Deal not found");
+  if (!deal || deal.organizationId !== user.organizationId) {
+    throw new Error("Deal not found or access denied");
+  }
 
   if (VALID_TRANSITIONS[deal.dealStatus] !== nextStatus) {
     throw new Error(`Invalid status transition from ${deal.dealStatus} to ${nextStatus}`);
@@ -66,6 +65,7 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
         eventType: `deal.${nextStatus.toLowerCase()}`,
         entityType: "Deal",
         entityId: dealId,
+        organizationId: user.organizationId,
         actorRole: Role.OWNER,
         metadata: { previousStatus: deal.dealStatus },
       },
@@ -78,17 +78,16 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
 }
 
 export async function cancelDealAction(dealId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const deal = await db.deal.findUnique({
     where: { id: dealId },
-    select: { dealStatus: true, vehicleId: true },
+    select: { dealStatus: true, vehicleId: true, organizationId: true },
   });
 
-  if (!deal) throw new Error("Deal not found");
+  if (!deal || deal.organizationId !== user.organizationId) {
+    throw new Error("Deal not found or access denied");
+  }
 
   if (!CANCELLABLE_STATES.includes(deal.dealStatus)) {
     throw new Error(`Cannot cancel deal from state: ${deal.dealStatus}`);
@@ -110,6 +109,7 @@ export async function cancelDealAction(dealId: string) {
         eventType: "deal.cancelled",
         entityType: "Deal",
         entityId: dealId,
+        organizationId: user.organizationId,
         actorRole: Role.OWNER,
         metadata: { previousStatus: deal.dealStatus },
       },
@@ -122,10 +122,7 @@ export async function cancelDealAction(dealId: string) {
 }
 
 export async function initiateDocuSignAction(dealId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const deal = await db.deal.findUnique({
     where: { id: dealId },
@@ -141,7 +138,9 @@ export async function initiateDocuSignAction(dealId: string) {
     },
   });
 
-  if (!deal) throw new Error("Deal not found");
+  if (!deal || (deal as any).organizationId !== user.organizationId) {
+    throw new Error("Deal not found or access denied");
+  }
 
   if (deal.dealStatus !== DealStatus.DOCUMENTS_PENDING) {
     throw new Error(`Invalid deal status: ${deal.dealStatus}. Must be DOCUMENTS_PENDING.`);
@@ -180,6 +179,7 @@ export async function initiateDocuSignAction(dealId: string) {
         eventType: "deal.contracts_sent",
         entityType: "Deal",
         entityId: dealId,
+        organizationId: user.organizationId,
         actorRole: Role.OWNER,
         metadata: { envelopeId },
       },

@@ -20,6 +20,8 @@ interface PortalDashboardContentProps {
   recentRequests: VehicleRequest[];
 }
 
+import { BRANDING } from "@/config/branding";
+
 export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequests }: PortalDashboardContentProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
@@ -228,7 +230,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
             <div className="space-y-6">
               <div className="space-y-1.5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Assigned Concierge</p>
-                <p className="font-black text-lg italic uppercase tracking-tight">Evo Motors Concierge</p>
+                <p className="font-black text-lg italic uppercase tracking-tight">{BRANDING.companyName} Concierge</p>
               </div>
               <div className="space-y-4 pt-2">
                 <Button className="w-full rounded-full h-14 font-black uppercase tracking-widest shadow-lg group bg-[#1A1A1A] hover:bg-[#2A2A2A]">

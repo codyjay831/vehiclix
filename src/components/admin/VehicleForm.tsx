@@ -39,7 +39,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
-import { Loader2, Plus, X, Upload, Save } from "lucide-react";
+import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star } from "lucide-react";
+import { decodeVin } from "@/lib/vin";
 
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters"),
@@ -93,6 +94,7 @@ interface VehicleFormValues {
 export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isDecoding, setIsDecoding] = React.useState(false);
   const [photos, setPhotos] = React.useState<File[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -117,6 +119,49 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     control: form.control,
     name: "features" as any,
   });
+
+  const handleDecodeVin = async () => {
+    const vin = form.getValues("vin");
+    if (!vin || vin.length !== 17) {
+      toast.error("Please enter a valid 17-character VIN first");
+      return;
+    }
+
+    setIsDecoding(true);
+    try {
+      const data = await decodeVin(vin);
+      if (data) {
+        if (data.year) form.setValue("year", data.year);
+        if (data.make) form.setValue("make", data.make);
+        if (data.model) form.setValue("model", data.model);
+        if (data.trim) form.setValue("trim", data.trim);
+        if (data.drivetrain) form.setValue("drivetrain", data.drivetrain);
+        
+        // Add additional specs to highlights if they aren't already there
+        const currentHighlights = form.getValues("highlights") || [];
+        const newHighlights = [...currentHighlights];
+        
+        if (data.bodyType && !newHighlights.includes(`Body: ${data.bodyType}`)) {
+          newHighlights.push(`Body: ${data.bodyType}`);
+        }
+        if (data.engine && !newHighlights.includes(`Engine: ${data.engine}`)) {
+          newHighlights.push(`Engine: ${data.engine}`);
+        }
+        if (data.horsepower && !newHighlights.includes(`${data.horsepower} HP`)) {
+          newHighlights.push(`${data.horsepower} HP`);
+        }
+        
+        form.setValue("highlights", newHighlights);
+        toast.success("Vehicle data populated from VIN");
+      } else {
+        toast.error("Could not decode VIN. Please enter details manually.");
+      }
+    } catch (error) {
+      toast.error("VIN API error. Please enter details manually.");
+    } finally {
+      setIsDecoding(false);
+    }
+  };
 
   const onSubmit = async (values: VehicleFormValues, status?: VehicleStatus) => {
     setIsSubmitting(true);
@@ -190,6 +235,14 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     setPhotos(photos.filter((_, i) => i !== index));
   };
 
+  const setPrimaryPhoto = (index: number) => {
+    const newPhotos = [...photos];
+    const [selected] = newPhotos.splice(index, 1);
+    newPhotos.unshift(selected);
+    setPhotos(newPhotos);
+    toast.success("Primary photo updated");
+  };
+
   return (
     <Form {...form}>
       <form className="space-y-8 pb-24">
@@ -198,72 +251,91 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           <CardHeader>
             <CardTitle>1. Vehicle Identification</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <FormField
-              control={form.control}
-              name="vin"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>VIN</FormLabel>
-                  <FormControl>
-                    <Input placeholder="17-character VIN" {...field} value={field.value || ""} maxLength={17} className="uppercase font-mono" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="year"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Year</FormLabel>
-                  <FormControl>
-                    <Input type="number" {...field} value={field.value || ""} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="make"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Make</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="model"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Model</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="trim"
-              render={({ field }) => (
-                <FormItem className="lg:col-span-2">
-                  <FormLabel>Trim (Optional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Performance, Adventure" {...field} value={field.value || ""} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <CardContent className="space-y-6">
+            <div className="flex flex-col md:flex-row gap-6 items-end">
+              <FormField
+                control={form.control}
+                name="vin"
+                render={({ field }) => (
+                  <FormItem className="flex-grow">
+                    <FormLabel>VIN</FormLabel>
+                    <FormControl>
+                      <Input placeholder="17-character VIN" {...field} value={field.value || ""} maxLength={17} className="uppercase font-mono" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button 
+                type="button" 
+                variant="secondary" 
+                className="h-10 px-6 font-bold shadow-sm border-2 border-primary/10 hover:border-primary/30"
+                onClick={handleDecodeVin}
+                disabled={isDecoding}
+              >
+                {isDecoding ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="mr-2 h-4 w-4" />
+                )}
+                Decode VIN
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <FormField
+                control={form.control}
+                name="year"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Year</FormLabel>
+                    <FormControl>
+                      <Input type="number" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="make"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Make</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="model"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Model</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="trim"
+                render={({ field }) => (
+                  <FormItem className="lg:col-span-2">
+                    <FormLabel>Trim (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Performance, Adventure" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -577,24 +649,39 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               {photos.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                   {photos.map((photo, index) => (
-                    <div key={index} className="relative group aspect-square rounded-md overflow-hidden border">
+                    <div key={index} className="relative group aspect-square rounded-md overflow-hidden border shadow-sm">
                       <img
                         src={URL.createObjectURL(photo)}
                         alt={`Preview ${index}`}
                         className="h-full w-full object-cover"
                       />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => removePhoto(index)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        {index !== 0 && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setPrimaryPhoto(index)}
+                            title="Set as Primary"
+                          >
+                            <Star className="h-3 w-3" />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removePhoto(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                       {index === 0 && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-primary/80 text-primary-foreground text-[10px] py-0.5 text-center">
-                          Primary
+                        <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-primary-foreground text-[10px] font-bold py-1 text-center flex items-center justify-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Primary Image
                         </div>
                       )}
                     </div>

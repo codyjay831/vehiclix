@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Search, ArrowRight, Zap, Battery, Home } from "lucide-react";
 
+import { BRANDING } from "@/config/branding";
+
 export function EducationSection() {
   const sections = [
     {
@@ -21,7 +23,7 @@ export function EducationSection() {
     },
     {
       title: "Home Energy",
-      description: "Your EV needs a home. We provide guidance on charger installations and solar solutions through our Baytech partnership.",
+      description: `Your EV needs a home. We provide guidance on charger installations and solar solutions through our home energy partners.`,
       icon: Home,
     },
   ];
@@ -34,7 +36,7 @@ export function EducationSection() {
           <div className="space-y-12">
             <div className="space-y-4">
               <h2 className="text-sm font-black uppercase tracking-[0.3em] text-primary">
-                The Evo Standard
+                The {BRANDING.companyName.split(' ')[0]} Standard
               </h2>
               <h3 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-none italic">
                 Transparent <br />EV Buying.

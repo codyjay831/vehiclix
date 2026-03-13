@@ -39,19 +39,20 @@ export async function initiateVehicleReservationAction(data: InitiateReservation
   try {
     // 1. Transactional check and creation
     const result = await db.$transaction(async (tx) => {
-      // 1.1 Verify vehicle is LISTED
+      // 1.1 Verify vehicle is LISTED and get organization
       const vehicle = await tx.vehicle.findUnique({
         where: { id: vehicleId },
-        select: { id: true, vehicleStatus: true, price: true },
+        select: { id: true, vehicleStatus: true, price: true, organizationId: true },
       });
 
-      if (!vehicle || vehicle.vehicleStatus !== VehicleStatus.LISTED) {
+      if (!vehicle || vehicle.vehicleStatus !== VehicleStatus.LISTED || !vehicle.organizationId) {
         return { error: "VEHICLE_UNAVAILABLE" as const };
       }
 
       // 1.2 Identity Resolution (Stub Account)
       let user = await tx.user.findUnique({
         where: { email: email.toLowerCase() },
+        select: { id: true, organizationId: true },
       });
 
       if (!user) {
@@ -63,7 +64,14 @@ export async function initiateVehicleReservationAction(data: InitiateReservation
             phone,
             role: Role.CUSTOMER,
             isStub: true,
+            organizationId: vehicle.organizationId,
           },
+        });
+      } else if (!user.organizationId) {
+        // If an existing stub account is missing an organization, assign it based on this reservation
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: { organizationId: vehicle.organizationId },
         });
       }
 
@@ -72,6 +80,7 @@ export async function initiateVehicleReservationAction(data: InitiateReservation
         data: {
           vehicleId,
           userId: user.id,
+          organizationId: vehicle.organizationId,
           dealStatus: DealStatus.DEPOSIT_PENDING,
           purchasePrice: vehicle.price,
           depositAmount: new Prisma.Decimal(FIXED_DEPOSIT_AMOUNT),
@@ -120,6 +129,7 @@ export async function initiateVehicleReservationAction(data: InitiateReservation
         eventType: "deposit.initiated",
         entityType: "Deal",
         entityId: result.deal.id,
+        organizationId: result.deal.organizationId,
         actorId: result.user.id,
         actorRole: Role.CUSTOMER,
         metadata: {

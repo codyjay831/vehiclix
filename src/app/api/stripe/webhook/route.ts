@@ -31,12 +31,20 @@ export async function POST(req: Request) {
       // 1. Idempotency Check
       const dealDeposit = await db.dealDeposit.findUnique({
         where: { stripePaymentId },
-        include: { deal: true },
+        include: { 
+          deal: {
+            select: {
+              id: true,
+              vehicleId: true,
+              organizationId: true
+            }
+          }
+        },
       });
 
-      if (!dealDeposit) {
-        console.error(`DealDeposit not found for Stripe ID: ${stripePaymentId}`);
-        return NextResponse.json({ error: "Deposit record not found" }, { status: 404 });
+      if (!dealDeposit || !dealDeposit.deal.organizationId) {
+        console.error(`DealDeposit or its organization not found for Stripe ID: ${stripePaymentId}`);
+        return NextResponse.json({ error: "Deposit record or organization not found" }, { status: 404 });
       }
 
       if (dealDeposit.paymentStatus === PaymentStatus.SUCCEEDED) {
@@ -77,6 +85,7 @@ export async function POST(req: Request) {
             eventType: "deposit.completed",
             entityType: "Deal",
             entityId: dealDeposit.dealId,
+            organizationId: (dealDeposit.deal as any).organizationId,
             actorRole: Role.CUSTOMER,
             metadata: { 
               stripePaymentId,

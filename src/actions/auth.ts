@@ -3,17 +3,18 @@
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { encrypt } from "@/lib/session";
+import { encrypt, decrypt } from "@/lib/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/audit";
+import { getDefaultOrganization, getOrganizationById } from "@/lib/organization";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
 /**
  * Sets the session cookie based on user role.
  */
-async function setSessionCookie(user: { id: string; role: Role; email: string }, isTwoFactorVerified = true) {
+async function setSessionCookie(user: { id: string; role: Role; email: string; organizationId?: string | null }, isTwoFactorVerified = true) {
   const expiresAt = new Date(
     Date.now() + (user.role === Role.OWNER ? 8 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
   );
@@ -22,6 +23,7 @@ async function setSessionCookie(user: { id: string; role: Role; email: string },
     userId: user.id,
     role: user.role,
     email: user.email,
+    organizationId: user.organizationId,
     expiresAt,
     isTwoFactorVerified,
   });
@@ -69,12 +71,15 @@ export async function loginAction(formData: FormData) {
     // Set a "partial" session where isTwoFactorVerified is false
     await setSessionCookie(user, false);
 
+    const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
+
     await logAuditEvent({
       eventType: "auth.2fa_prompted",
       actorId: user.id,
       actorRole: user.role,
       entityType: "User",
       entityId: user.id,
+      organizationId: org.id,
     });
 
     const from = formData.get("from") as string;
@@ -86,12 +91,15 @@ export async function loginAction(formData: FormData) {
 
   await setSessionCookie(user);
 
+  const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
+
   await logAuditEvent({
     eventType: "auth.login",
     actorId: user.id,
     actorRole: user.role,
     entityType: "User",
     entityId: user.id,
+    organizationId: org.id,
     metadata: {
       email: user.email,
     },
@@ -111,6 +119,7 @@ export async function registerAction(formData: FormData) {
   const email = formData.get("email") as string;
   const phone = formData.get("phone") as string;
   const password = formData.get("password") as string;
+  const organizationId = formData.get("organizationId") as string;
 
   if (!firstName || !lastName || !email || !password) {
     return { error: "Required fields are missing" };
@@ -126,6 +135,13 @@ export async function registerAction(formData: FormData) {
 
   if (existingUser) {
     if (existingUser.isStub) {
+      // Resolve organization for upgrade
+      let finalOrgId = organizationId || existingUser.organizationId;
+      if (!finalOrgId) {
+        const org = await getDefaultOrganization();
+        finalOrgId = org.id;
+      }
+
       // Upgrade stub account in place
       user = await db.user.update({
         where: { id: existingUser.id },
@@ -135,12 +151,23 @@ export async function registerAction(formData: FormData) {
           phone,
           passwordHash,
           isStub: false,
+          organizationId: finalOrgId,
         },
       });
     } else {
       return { error: "Email already registered" };
     }
   } else {
+    // Resolve organization: 
+    // 1. Check if an explicit organizationId was provided (pilot override)
+    // 2. Fall back to default Evo Motors
+    let finalOrgId = organizationId;
+    
+    if (!finalOrgId) {
+      const org = await getDefaultOrganization();
+      finalOrgId = org.id;
+    }
+
     // Create new customer
     user = await db.user.create({
       data: {
@@ -151,6 +178,7 @@ export async function registerAction(formData: FormData) {
         passwordHash,
         role: Role.CUSTOMER,
         isStub: false,
+        organizationId: finalOrgId,
       },
     });
   }
@@ -163,6 +191,7 @@ export async function registerAction(formData: FormData) {
     actorRole: user.role,
     entityType: "User",
     entityId: user.id,
+    organizationId: user.organizationId!,
     metadata: {
       email: user.email,
     },
@@ -180,15 +209,33 @@ export async function logoutAction() {
   const session = await decrypt(token);
 
   if (session) {
+    const org = session.organizationId ? { id: session.organizationId } : await getDefaultOrganization();
+
     await logAuditEvent({
       eventType: "auth.logout",
       actorId: session.userId,
       actorRole: session.role,
       entityType: "User",
       entityId: session.userId,
+      organizationId: org.id,
     });
   }
 
   cookieStore.delete(SESSION_COOKIE_NAME);
+  // HARDENING: Clear mock cookies to prevent implicit re-auth in development
+  cookieStore.delete("evo_mock_role");
+  cookieStore.delete("evo_mock_user_email");
+
   redirect("/login");
+}
+
+/**
+ * Public action to fetch basic organization info for registration/branding.
+ */
+export async function getOrganizationInfoAction(id: string) {
+  const org = await db.organization.findUnique({
+    where: { id },
+    select: { name: true, slug: true },
+  });
+  return org;
 }

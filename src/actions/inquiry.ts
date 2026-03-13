@@ -3,7 +3,8 @@
 import { db } from "@/lib/db";
 import { ContactMethod, InquiryStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { notifyDealerOfLead } from "@/lib/notifications";
 
 interface InquiryData {
   vehicleId: string;
@@ -30,7 +31,20 @@ export async function submitInquiryAction(data: InquiryData) {
   // Identity Resolution (Stub Account)
   let user = await db.user.findUnique({
     where: { email: email.toLowerCase() },
+    select: { id: true, organizationId: true },
   });
+
+  // Get vehicle to resolve organization ownership
+  const vehicle = await db.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { organizationId: true, year: true, make: true, model: true },
+  });
+
+  if (!vehicle || !vehicle.organizationId) {
+    throw new Error("Vehicle not found or organization not assigned");
+  }
+
+  const vehicleInfo = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
 
   if (!user) {
     user = await db.user.create({
@@ -41,14 +55,22 @@ export async function submitInquiryAction(data: InquiryData) {
         phone,
         role: Role.CUSTOMER,
         isStub: true,
+        organizationId: vehicle.organizationId,
       },
+    });
+  } else if (!user.organizationId) {
+    // If an existing stub account is missing an organization, assign it based on this inquiry
+    user = await db.user.update({
+      where: { id: user.id },
+      data: { organizationId: vehicle.organizationId },
     });
   }
 
   // Create Inquiry
-  await db.vehicleInquiry.create({
+  const inquiry = await db.vehicleInquiry.create({
     data: {
       vehicleId,
+      organizationId: vehicle.organizationId,
       userId: user.id,
       firstName,
       lastName,
@@ -62,6 +84,32 @@ export async function submitInquiryAction(data: InquiryData) {
     },
   });
 
+  // Log Activity Event
+  await db.activityEvent.create({
+    data: {
+      eventType: "inquiry.submitted",
+      entityType: "VehicleInquiry",
+      entityId: inquiry.id,
+      organizationId: vehicle.organizationId,
+      actorId: user.id,
+      actorRole: Role.CUSTOMER,
+      metadata: { vehicleId },
+    },
+  });
+
+  // NEW: Notify Dealer of Lead
+  await notifyDealerOfLead({
+    organizationId: vehicle.organizationId,
+    vehicleInfo,
+    customerInfo: {
+      firstName,
+      lastName,
+      email: email.toLowerCase(),
+      phone,
+    },
+    message,
+  });
+
   return { success: true };
 }
 
@@ -69,18 +117,15 @@ export async function submitInquiryAction(data: InquiryData) {
  * Updates an inquiry's status and logs the event.
  */
 export async function updateInquiryStatusAction(id: string, newStatus: InquiryStatus) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const inquiry = await db.vehicleInquiry.findUnique({
     where: { id },
-    select: { inquiryStatus: true, userId: true },
+    select: { inquiryStatus: true, userId: true, organizationId: true },
   });
 
-  if (!inquiry) {
-    throw new Error("Inquiry not found");
+  if (!inquiry || inquiry.organizationId !== user.organizationId) {
+    throw new Error("Inquiry not found or access denied");
   }
 
   // Validate transitions
@@ -114,6 +159,7 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
               eventType,
               entityType: "VehicleInquiry",
               entityId: id,
+              organizationId: user.organizationId,
               actorRole: Role.OWNER,
               metadata: { previousStatus: currentStatus },
             },
@@ -131,9 +177,15 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
  * Updates the owner's internal notes for an inquiry.
  */
 export async function updateInquiryNotesAction(id: string, notes: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
+  const user = await requireUserWithOrg();
+
+  const inquiry = await db.vehicleInquiry.findUnique({
+    where: { id },
+    select: { organizationId: true },
+  });
+
+  if (!inquiry || inquiry.organizationId !== user.organizationId) {
+    throw new Error("Inquiry not found or access denied");
   }
 
   await db.vehicleInquiry.update({

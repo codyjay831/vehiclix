@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { DocumentStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { saveFile } from "@/lib/storage";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -18,13 +18,13 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
     throw new Error("Unauthorized: Customer access required");
   }
 
-  // Verify that the deal belongs to the current user
+  // Verify that the deal belongs to the current user and get organization
   const deal = await db.deal.findUnique({
     where: { id: dealId },
-    select: { userId: true },
+    select: { userId: true, organizationId: true },
   });
 
-  if (!deal || deal.userId !== user.id) {
+  if (!deal || deal.userId !== user.id || !deal.organizationId) {
     throw new Error("Deal not found or unauthorized");
   }
 
@@ -60,6 +60,7 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
         eventType: "document.uploaded",
         entityType: "Deal",
         entityId: dealId,
+        organizationId: deal.organizationId,
         actorRole: Role.CUSTOMER,
         metadata: { documentId },
       },
@@ -75,17 +76,20 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
  * Marks a document as verified by the owner.
  */
 export async function verifyDocumentAction(documentId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const document = await db.dealDocument.findUnique({
     where: { id: documentId },
-    select: { documentStatus: true, dealId: true },
+    select: { 
+      documentStatus: true, 
+      dealId: true,
+      deal: { select: { organizationId: true } }
+    },
   });
 
-  if (!document) throw new Error("Document not found");
+  if (!document || (document.deal as any).organizationId !== user.organizationId) {
+    throw new Error("Document not found or access denied");
+  }
   if (document.documentStatus !== DocumentStatus.UPLOADED) {
     throw new Error(`Invalid transition: Cannot verify document in ${document.documentStatus} status`);
   }
@@ -100,6 +104,7 @@ export async function verifyDocumentAction(documentId: string) {
         eventType: "document.verified",
         entityType: "Deal",
         entityId: document.dealId,
+        organizationId: user.organizationId,
         actorRole: Role.OWNER,
         metadata: { documentId },
       },
@@ -114,17 +119,20 @@ export async function verifyDocumentAction(documentId: string) {
  * Marks a document as rejected by the owner.
  */
 export async function rejectDocumentAction(documentId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER) {
-    throw new Error("Unauthorized: Owner access required");
-  }
+  const user = await requireUserWithOrg();
 
   const document = await db.dealDocument.findUnique({
     where: { id: documentId },
-    select: { documentStatus: true, dealId: true },
+    select: { 
+      documentStatus: true, 
+      dealId: true,
+      deal: { select: { organizationId: true } }
+    },
   });
 
-  if (!document) throw new Error("Document not found");
+  if (!document || (document.deal as any).organizationId !== user.organizationId) {
+    throw new Error("Document not found or access denied");
+  }
   if (document.documentStatus !== DocumentStatus.UPLOADED) {
     throw new Error(`Invalid transition: Cannot reject document in ${document.documentStatus} status`);
   }
@@ -139,6 +147,7 @@ export async function rejectDocumentAction(documentId: string) {
         eventType: "document.rejected",
         entityType: "Deal",
         entityId: document.dealId,
+        organizationId: user.organizationId,
         actorRole: Role.OWNER,
         metadata: { documentId },
       },
