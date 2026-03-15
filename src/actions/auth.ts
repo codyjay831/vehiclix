@@ -81,7 +81,7 @@ export async function loginAction(formData: FormData) {
     });
 
     const from = formData.get("from") as string;
-    const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
+    const baseUrl = process.env.APP_URL || "https://vehiclix.app";
     const verifyUrl = new URL("/login/verify-2fa", baseUrl);
     if (from) verifyUrl.searchParams.set("from", from);
     redirect(`${verifyUrl.pathname}${verifyUrl.search}`);

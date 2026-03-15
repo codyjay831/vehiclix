@@ -55,7 +55,7 @@ Message:
 "${message || "I'm interested in this vehicle. Is it still available?"}"
 
 View in Admin:
-${process.env.APP_URL || "http://localhost:3000"}/admin/inquiries
+${process.env.APP_URL || "https://vehiclix.app"}/admin/inquiries
     `;
 
     // 3. Log the notification (Mocking SMTP)

@@ -2,74 +2,70 @@
 
 This document provides instructions for deploying the Vehiclix platform to Google Cloud using Firebase App Hosting.
 
-## 1. Production Environment Variables
+## 1. Production Environment Variables Inventory
 
-The following environment variables must be configured in the Firebase Console (under App Hosting settings):
-
-### Required Secrets
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (Transaction mode recommended for serverless). |
-| `DIRECT_URL` | Direct PostgreSQL connection string (Required for Prisma migrations). |
-| `AUTH_SECRET` | A long, random string used to sign session JWTs. |
-| `STRIPE_SECRET_KEY` | Your Stripe secret key (`sk_live_...` or `sk_test_...`). |
-| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret for `https://vehiclix.app/api/webhooks/stripe`. |
-
-### Required Public Variables
-| Variable | Value |
-|----------|-------|
-| `APP_URL` | `https://vehiclix.app` |
-| `NEXT_PUBLIC_PLATFORM_DOMAIN` | `vehiclix.app` |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Your Stripe publishable key. |
+| Variable | Type | Purpose | Launch Req? |
+|----------|------|---------|-------------|
+| `DATABASE_URL` | Secret | Connection string for your production PostgreSQL. | **YES** |
+| `DIRECT_URL` | Secret | Required for Prisma migrations during build. | **YES** |
+| `AUTH_SECRET` | Secret | Random string for signing session JWTs. | **YES** |
+| `STRIPE_SECRET_KEY` | Secret | Your production Stripe secret key. | **YES** |
+| `STRIPE_WEBHOOK_SECRET` | Secret | Signing secret for Stripe webhooks. | **YES** |
+| `APP_URL` | Public | Set to `https://vehiclix.app`. | **YES** |
+| `NEXT_PUBLIC_PLATFORM_DOMAIN` | Public | Set to `vehiclix.app`. | **YES** |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Public | Your production Stripe publishable key. | **YES** |
+| `TWO_FACTOR_ENCRYPTION_KEY` | Secret | Hex key for encrypting 2FA secrets. | **YES** |
+| `ALLOW_MOCK_AUTH` | Secret | **MUST be "false" in production.** | **YES** |
+| `DOCUSIGN_WEBHOOK_SECRET` | Secret | Signing secret for DocuSign webhooks. | Optional |
 
 ---
 
 ## 2. Firebase App Hosting Setup
 
 1.  **Initialize Firebase**:
-    - Ensure you have the [Firebase CLI](https://firebase.google.com/docs/cli) installed.
     - Run `firebase login`.
     - Run `firebase init apphosting`.
 2.  **Select Project**: Choose your Google Cloud project.
-3.  **Connect GitHub**: Link your repository and branch (usually `master` or `main`).
-4.  **Automatic Detection**: Firebase App Hosting will automatically detect the Next.js project and the `standalone` output configuration.
+3.  **Connect GitHub**: Link your repository (`master` branch).
+4.  **Automatic Detection**: Firebase will detect the Next.js project and `standalone` output.
 
 ---
 
-## 3. Custom Domain Setup (vehiclix.app)
+## 3. GitHub Connection & Deployment
 
-1.  In the Firebase Console, go to **App Hosting** > **Settings**.
-2.  Add a **Custom Domain**.
-3.  Enter `vehiclix.app`.
-4.  Update your DNS provider with the A/AAAA and TXT records provided by Firebase.
-5.  Wait for SSL certificate provisioning (can take up to 24 hours).
+1.  Push the code to your GitHub repository.
+2.  Firebase App Hosting will trigger a build on every push to the connected branch.
+3.  Ensure the build command in Firebase is set to `npm run build` (which includes `prisma generate`).
 
 ---
 
-## 4. Multi-Tenant DNS Configuration
+## 4. Custom Domain Setup (vehiclix.app)
 
-Since Vehiclix supports custom domains for dealerships (e.g., `dealer.com` mapping to `vehiclix.app/dealer-slug`), ensure your production environment supports:
-- **Wildcard DNS**: If you plan to use subdomains like `dealer.vehiclix.app`.
-- **Domain Mapping**: The `src/proxy.ts` (Next.js Proxy) is already configured to handle external domain routing via the `/api/org/resolve-domain` endpoint.
-
----
-
-## 5. Post-Deployment Verification Checklist
-
-- [ ] **Auth**: Verify login at `https://vehiclix.app/login` works and sets secure cookies.
-- [ ] **Stripe**: Ensure Stripe Checkout sessions redirect back to `https://vehiclix.app`.
-- [ ] **Webhooks**: Configure your Stripe Dashboard to send `payment_intent.succeeded` events to `https://vehiclix.app/api/webhooks/stripe`.
-- [ ] **Database**: Verify Prisma migrations ran successfully (`npx prisma migrate deploy` during build).
-- [ ] **Proxy**: Test that accessing a dealership slug works (e.g., `/lux-evs`).
+1.  In Firebase Console: **App Hosting** > **Settings** > **Custom Domains**.
+2.  Add `vehiclix.app`.
+3.  Configure DNS records (A/AAAA/TXT) as provided by Firebase.
+4.  Provisioning SSL may take up to 24 hours.
 
 ---
 
-## 6. Critical Deployment Notes & Limitations
+## 5. Risk Classification & Deferred Items
 
-### ⚠️ File Storage Warning
-The current implementation uses **local filesystem storage** for vehicle photos (`public/uploads`) and private documents (`storage/documents`).
-- **Limitation**: Firebase App Hosting (and most serverless environments) has an ephemeral filesystem. **Uploaded files will be lost** whenever the instance restarts or a new deployment occurs.
-- **Production Recommendation**: Modify `src/lib/storage.ts` and `src/actions/inventory.ts` to use **Google Cloud Storage (GCS)** or AWS S3 before going live with real users.
+### ⚠️ [WARNING] File Storage (Ephemeral Filesystem)
+The current implementation saves photos to `public/uploads` and documents to `storage/`.
+- **Status**: **DEFER** for early internal launch.
+- **Risk**: Files will be lost on re-deploy or instance restart.
+- **Migration**: Future move to **Google Cloud Storage (GCS)** is required for real customer scale.
 
-### Database Connection Pooling
-Ensure your PostgreSQL provider (e.g., Supabase, Neon, or Google Cloud SQL) is configured with a connection pooler (like PgBouncer), as serverless functions can quickly exhaust database connections. Use the `?pgbouncer=true` flag in your `DATABASE_URL` if supported.
+### ⚠️ [WARNING] Database Connection Limits
+- **Status**: **DEFER** for early launch.
+- **Risk**: Serverless functions can exhaust DB connections.
+- **Mitigation**: Use a connection pooler (e.g., Supabase/Neon pgbouncer) in `DATABASE_URL`.
+
+---
+
+## 6. Rollback & Troubleshooting
+
+- **Build Failure**: Check the Firebase App Hosting logs. Common cause: missing secrets in the console.
+- **Database Error**: Ensure `DIRECT_URL` is set correctly for migrations.
+- **Redirect Loop**: Check `APP_URL` matches the accessing domain exactly.
+- **Rollback**: Use the Firebase Console to redeploy a previous successful build.
