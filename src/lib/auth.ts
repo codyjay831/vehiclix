@@ -13,9 +13,14 @@ export async function getAuthenticatedUser(): Promise<User | null> {
   const payload = await decrypt(token);
 
   if (payload) {
-    return db.user.findUnique({
+    const user = await db.user.findUnique({
       where: { id: payload.userId },
     });
+    
+    // Super Admin check: If role in session is SUPER_ADMIN, return user as is.
+    if (user?.role === Role.SUPER_ADMIN) return user;
+    
+    return user;
   }
 
   // Fallback to mock auth if enabled

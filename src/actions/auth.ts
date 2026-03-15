@@ -237,3 +237,71 @@ export async function getOrganizationInfoAction(id: string) {
   });
   return org;
 }
+
+/**
+ * Claim an owner account using an invite token.
+ */
+export async function claimOwnerAccountAction(formData: FormData) {
+  const token = formData.get("token") as string;
+  const firstName = formData.get("firstName") as string;
+  const lastName = formData.get("lastName") as string;
+  const phone = formData.get("phone") as string;
+  const password = formData.get("password") as string;
+
+  if (!token || !firstName || !lastName || !password) {
+    return { error: "Required fields are missing." };
+  }
+
+  const invite = await db.ownerInvite.findUnique({
+    where: { token, status: "PENDING" }
+  });
+
+  if (!invite) {
+    return { error: "Invalid or already used invite token." };
+  }
+
+  if (invite.expiresAt < new Date()) {
+    return { error: "Invite token has expired." };
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  // We finalize the OWNER user here (Pattern B)
+  const user = await db.user.create({
+    data: {
+      firstName,
+      lastName,
+      email: invite.email,
+      phone,
+      passwordHash,
+      role: Role.OWNER,
+      organizationId: invite.organizationId,
+      isStub: false,
+    },
+  });
+
+  // Update invite status
+  await db.ownerInvite.update({
+    where: { id: invite.id },
+    data: { 
+      status: "ACCEPTED",
+      acceptedAt: new Date()
+    }
+  });
+
+  await setSessionCookie(user);
+
+  await logAuditEvent({
+    eventType: "auth.register_owner",
+    actorId: user.id,
+    actorRole: user.role,
+    entityType: "User",
+    entityId: user.id,
+    organizationId: user.organizationId!,
+    metadata: {
+      email: user.email,
+    },
+  });
+
+  redirect("/admin");
+}

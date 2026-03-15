@@ -72,7 +72,8 @@ export function Footer() {
                 <h4 className="text-xs font-black uppercase tracking-widest">Platform</h4>
                 <ul className="space-y-4 text-sm font-bold uppercase tracking-tight">
                   <li><Link href="/#features" className="text-muted-foreground hover:text-primary transition-colors">Features</Link></li>
-                  <li><Link href="/login" className="text-muted-foreground hover:text-primary transition-colors">Get Started</Link></li>
+                  <li><Link href="/request-access" className="text-muted-foreground hover:text-primary transition-colors font-black text-primary italic">Request Access</Link></li>
+                  <li><Link href="/login" className="text-muted-foreground hover:text-primary transition-colors">Partner Login</Link></li>
                 </ul>
               </div>
               <div className="space-y-6">

@@ -111,7 +111,20 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // 4. Owner Route Protection: /admin/*
+  // 4. Super Admin Route Protection: /super-admin/*
+  if (pathname.startsWith("/super-admin")) {
+    if (!role) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("from", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (role !== "SUPER_ADMIN") {
+      return new NextResponse("403 Forbidden: Super Admin access required", { status: 403 });
+    }
+  }
+
+  // 5. Owner Route Protection: /admin/*
   if (pathname.startsWith("/admin")) {
     if (!role) {
       const loginUrl = new URL("/login", request.url);
@@ -162,6 +175,7 @@ export const config = {
   matcher: [
     "/admin/:path*", 
     "/portal/:path*", 
+    "/super-admin/:path*",
     "/login/verify-2fa",
     "/",
     "/inventory/:path*",

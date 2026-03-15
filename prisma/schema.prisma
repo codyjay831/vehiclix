@@ -460,6 +460,50 @@ model ActivityEvent {
 enum Role {
   OWNER
   CUSTOMER
+  SUPER_ADMIN
+}
+
+model BetaAccessRequest {
+  id              String           @id @default(uuid())
+  dealershipName  String
+  contactName     String
+  email           String
+  phone           String
+  status          BetaAccessStatus @default(PENDING)
+  rejectionReason String?          @db.Text
+  reviewedAt      DateTime?
+  reviewedByUserId String?
+  organizationId  String?          // Linked after approval
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status])
+}
+
+enum BetaAccessStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model OwnerInvite {
+  id             String      @id @default(uuid())
+  token          String      @unique // We'll store a secure random token
+  email          String
+  organizationId String
+  status         InviteStatus @default(PENDING)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([token])
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
 }
 
 enum VehicleStatus {

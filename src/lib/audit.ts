@@ -8,6 +8,7 @@ export type AuditEventType =
   | "auth.login"
   | "auth.logout"
   | "auth.register"
+  | "auth.register_owner"
   | "auth.2fa_prompted"
   | "auth.2fa_verified"
   | "auth.2fa_failed"

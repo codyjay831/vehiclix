@@ -104,7 +104,7 @@ export function Navbar({ userRole }: NavbarProps) {
                 </Button>
               </Link>
             ) : (
-              <Link href="/login">
+              <Link href="/request-access">
                 <Button className="rounded-full px-6 font-black uppercase tracking-widest text-xs shadow-lg shadow-primary/20">
                   Get Started
                 </Button>

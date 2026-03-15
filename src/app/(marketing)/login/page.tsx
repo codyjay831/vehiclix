@@ -118,10 +118,14 @@ function LoginForm() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="bg-muted/30 border-t-2 border-primary/5 p-8 justify-center">
+          <CardFooter className="bg-muted/30 border-t-2 border-primary/5 p-8 flex flex-col gap-4 text-center">
             <p className="text-xs font-bold text-muted-foreground italic">
               Please register through your dealership&apos;s showroom page.
             </p>
+            <div className="h-px w-10 bg-border mx-auto" />
+            <Link href="/request-access" className="text-[10px] font-black uppercase tracking-widest text-primary hover:opacity-80 transition-opacity">
+              Are you a dealership? Request Beta Access
+            </Link>
           </CardFooter>
         </Card>
 
