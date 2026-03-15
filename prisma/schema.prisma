@@ -22,12 +22,12 @@ model Organization {
   domains         OrganizationDomain[]
   homepage        OrganizationHomepage?
   subscription    OrganizationSubscription?
+  ownerInvites    OwnerInvite[]
   tradeInCaptures TradeInCapture[]
   users           User[]
   vehicles        Vehicle[]
   inquiries       VehicleInquiry[]
   vehicleRequests VehicleRequest[]
-  ownerInvites    OwnerInvite[]
 }
 
 model OrganizationHomepage {
@@ -406,15 +406,14 @@ model BetaAccessRequest {
 
 model OwnerInvite {
   id             String       @id @default(uuid())
-  tokenHash      String       @unique
   email          String
   organizationId String
   status         InviteStatus @default(PENDING)
   expiresAt      DateTime
   acceptedAt     DateTime?
-  lastSentAt     DateTime?
   createdAt      DateTime     @default(now())
-
+  lastSentAt     DateTime?
+  tokenHash      String       @unique
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([tokenHash])

@@ -1,5 +1,10 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { stripe } from "@/lib/stripe";
 import { VehicleStatus, DealStatus, PaymentStatus, Role, Prisma, LeadSource } from "@prisma/client";

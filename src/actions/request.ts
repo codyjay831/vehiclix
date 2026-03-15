@@ -1,10 +1,16 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { VehicleRequestStatus, Role, Priority, LeadSource } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { ensureLeadForInbound } from "@/lib/crm";
 
 interface VehicleRequestData {
@@ -144,7 +150,11 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
  * Updates a vehicle request's status and logs the event.
  */
 export async function updateRequestStatusAction(id: string, newStatus: VehicleRequestStatus) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const request = await db.vehicleRequest.findFirst({
     where: { id, organizationId: user.organizationId },
@@ -188,7 +198,8 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
               entityType: "VehicleRequest",
               entityId: id,
               organizationId: user.organizationId,
-              actorRole: Role.OWNER,
+              actorId: user.id,
+              actorRole: user.role,
               metadata: { previousStatus: currentStatus },
             },
           }),
@@ -205,7 +216,11 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
  * Updates the internal priority of a vehicle request.
  */
 export async function updateRequestPriorityAction(id: string, priority: Priority) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const request = await db.vehicleRequest.findFirst({
     where: { id, organizationId: user.organizationId },
@@ -229,7 +244,11 @@ export async function updateRequestPriorityAction(id: string, priority: Priority
  * Updates the owner's internal notes for a vehicle request.
  */
 export async function updateRequestNotesAction(id: string, notes: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const request = await db.vehicleRequest.findFirst({
     where: { id, organizationId: user.organizationId },

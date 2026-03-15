@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { approveBetaRequestAction, rejectBetaRequestAction, regenerateInviteAction } from "@/actions/beta";
+import { startSupportSession } from "@/actions/support";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Check, X, Loader2, Copy, Send, RefreshCw } from "lucide-react";
+import { Check, X, Loader2, Copy, Send, RefreshCw, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 export function BetaActions({ requestId, organizationId, status }: { requestId: string, organizationId?: string | null, status: string }) {
@@ -32,7 +33,12 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
       if (result.success && result.inviteToken) {
         setInviteToken(result.inviteToken);
         setIsApproveDialogOpen(false);
-        toast.success("Approved and provisioned!");
+        
+        if (result.emailSent) {
+          toast.success("Approved and invite email sent!");
+        } else {
+          toast.warning("Approved, but invite email failed to send. Please copy the link manually.");
+        }
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to approve.");
@@ -61,7 +67,11 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
       const result = await regenerateInviteAction(organizationId);
       if (result.success && result.inviteToken) {
         setInviteToken(result.inviteToken);
-        toast.success("Invite regenerated and sent!");
+        if (result.emailSent) {
+          toast.success("Invite regenerated and email sent!");
+        } else {
+          toast.warning("Invite regenerated, but email failed to send.");
+        }
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to regenerate.");
@@ -90,16 +100,29 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
 
   if (status === "APPROVED" && organizationId) {
     return (
-      <Button 
-        size="sm" 
-        variant="ghost" 
-        className="h-8 text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/5" 
-        onClick={handleRegenerate}
-        disabled={isPending}
-      >
-        {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-        Regenerate Invite
-      </Button>
+      <div className="flex items-center gap-2">
+        <form action={() => startSupportSession(organizationId)}>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="h-8 text-[10px] font-black uppercase tracking-widest text-amber-600 border-amber-500/20 hover:bg-amber-50" 
+            disabled={isPending}
+          >
+            <ExternalLink className="h-3 w-3 mr-1" />
+            Support Dealership
+          </Button>
+        </form>
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          className="h-8 text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/5" 
+          onClick={handleRegenerate}
+          disabled={isPending}
+        >
+          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+          Regenerate Invite
+        </Button>
+      </div>
     );
   }
 

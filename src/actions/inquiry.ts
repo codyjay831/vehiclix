@@ -1,9 +1,15 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { ContactMethod, InquiryStatus, Role, LeadSource } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { notifyDealerOfLead } from "@/lib/notifications";
 import { ensureLeadForInbound } from "@/lib/crm";
 
@@ -130,7 +136,11 @@ export async function submitInquiryAction(data: InquiryData) {
  * Updates an inquiry's status and logs the event.
  */
 export async function updateInquiryStatusAction(id: string, newStatus: InquiryStatus) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const inquiry = await db.vehicleInquiry.findFirst({
     where: { id, organizationId: user.organizationId },
@@ -173,7 +183,8 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
               entityType: "VehicleInquiry",
               entityId: id,
               organizationId: user.organizationId,
-              actorRole: Role.OWNER,
+              actorId: user.id,
+              actorRole: user.role,
               metadata: { previousStatus: currentStatus },
             },
           }),
@@ -190,7 +201,11 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
  * Updates the owner's internal notes for an inquiry.
  */
 export async function updateInquiryNotesAction(id: string, notes: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const inquiry = await db.vehicleInquiry.findFirst({
     where: { id, organizationId: user.organizationId },

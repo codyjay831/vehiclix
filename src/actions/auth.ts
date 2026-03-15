@@ -1,5 +1,10 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -102,7 +107,13 @@ export async function loginAction(formData: FormData) {
   });
 
   const from = formData.get("from") as string;
-  redirect(from || (user.role === Role.OWNER ? "/admin" : "/portal"));
+  const defaultRedirect = user.role === Role.SUPER_ADMIN 
+    ? "/super-admin" 
+    : user.role === Role.OWNER 
+      ? "/admin" 
+      : "/portal";
+
+  redirect(from || defaultRedirect);
 }
 
 /**

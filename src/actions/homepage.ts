@@ -1,7 +1,13 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -45,9 +51,10 @@ export type HomepageEditorPayload = z.infer<typeof HomepageSchema>;
  * Restricted to the organization owner.
  */
 export async function updateHomepageAction(rawData: unknown) {
+  await requireWriteAccess();
   // 1. Auth & Context Resolution
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 

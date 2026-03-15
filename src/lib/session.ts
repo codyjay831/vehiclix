@@ -18,6 +18,7 @@ export type SessionPayload = {
   role: Role;
   email: string;
   organizationId?: string | null;
+  supportOrgId?: string | null;
   expiresAt: Date;
   isTwoFactorVerified: boolean;
 };

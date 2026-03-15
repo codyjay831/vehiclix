@@ -1,7 +1,13 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { Role, BetaAccessStatus, InviteStatus } from "@prisma/client";
 import { createOrganizationAction } from "./organization";
 import { revalidatePath } from "next/cache";
@@ -53,6 +59,7 @@ import { sendInviteEmail } from "@/lib/mail";
  * provisions organization and creates an invite token.
  */
 export async function approveBetaRequestAction(requestId: string, slugOverride?: string) {
+  await requireWriteAccess();
   const user = await getAuthenticatedUser();
   if (!user || user.role !== Role.SUPER_ADMIN) {
     throw new Error("Unauthorized: Super Admin access required.");
@@ -116,14 +123,19 @@ export async function approveBetaRequestAction(requestId: string, slugOverride?:
   const baseUrl = process.env.APP_URL || "https://vehiclix.app";
   const inviteUrl = `${baseUrl}/setup-owner/${result.rawToken}`;
   
-  await sendInviteEmail({
+  const mailResult = await sendInviteEmail({
     email: request.email,
     dealershipName: request.dealershipName,
     inviteUrl,
   });
 
   revalidatePath("/super-admin/requests");
-  return { success: true, inviteToken: result.rawToken };
+  return { 
+    success: true, 
+    inviteToken: result.rawToken,
+    emailSent: mailResult.success,
+    emailError: mailResult.error
+  };
 }
 
 /**
@@ -159,6 +171,7 @@ export async function resendInviteAction(organizationId: string) {
  * Super Admin action to regenerate an invite.
  */
 export async function regenerateInviteAction(organizationId: string) {
+  await requireWriteAccess();
   const user = await getAuthenticatedUser();
   if (!user || user.role !== Role.SUPER_ADMIN) {
     throw new Error("Unauthorized.");
@@ -196,20 +209,26 @@ export async function regenerateInviteAction(organizationId: string) {
   const baseUrl = process.env.APP_URL || "https://vehiclix.app";
   const inviteUrl = `${baseUrl}/setup-owner/${rawToken}`;
   
-  await sendInviteEmail({
+  const mailResult = await sendInviteEmail({
     email: invite.email,
     dealershipName: org.name,
     inviteUrl,
   });
 
   revalidatePath("/super-admin/requests");
-  return { success: true, inviteToken: rawToken };
+  return { 
+    success: true, 
+    inviteToken: rawToken,
+    emailSent: mailResult.success,
+    emailError: mailResult.error
+  };
 }
 
 /**
  * Super Admin action to reject a beta request.
  */
 export async function rejectBetaRequestAction(requestId: string, reason: string) {
+  await requireWriteAccess();
   const user = await getAuthenticatedUser();
   if (!user || user.role !== Role.SUPER_ADMIN) {
     throw new Error("Unauthorized: Super Admin access required.");

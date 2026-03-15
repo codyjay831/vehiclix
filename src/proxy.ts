@@ -132,12 +132,15 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (role !== "OWNER") {
-      return new NextResponse("403 Forbidden: Owner access required", { status: 403 });
+    // Support Mode check: Allow SUPER_ADMIN only if supportOrgId is active
+    const isSupportMode = role === "SUPER_ADMIN" && session?.supportOrgId;
+    
+    if (role !== "OWNER" && !isSupportMode) {
+      return new NextResponse("403 Forbidden: Owner or Support access required", { status: 403 });
     }
 
-    // New: Check if 2FA is verified for Owners
-    if (session && !session.isTwoFactorVerified) {
+    // New: Check if 2FA is verified (Owners require 2FA, Support Mode bypasses it as SUPER_ADMIN already has their own session)
+    if (role === "OWNER" && session && !session.isTwoFactorVerified) {
       const verifyUrl = new URL("/login/verify-2fa", request.url);
       verifyUrl.searchParams.set("from", pathname);
       return NextResponse.redirect(verifyUrl);

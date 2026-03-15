@@ -1,5 +1,10 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { decryptSecret } from "@/lib/encryption";
 import { decrypt, encrypt } from "@/lib/session";

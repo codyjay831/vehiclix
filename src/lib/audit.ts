@@ -38,7 +38,10 @@ export type AuditEventType =
   | "lead.notification_sent"
   | "document.uploaded"
   | "document.verified"
-  | "document.rejected";
+  | "document.rejected"
+  | "support.session_started"
+  | "support.session_ended"
+  | "support.action_attempted";
 
 interface AuditLogOptions {
   eventType: AuditEventType;

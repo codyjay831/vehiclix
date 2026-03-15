@@ -1,7 +1,13 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { normalizeSlug, validateOrganizationSlug } from "@/lib/organization";
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
@@ -25,6 +31,7 @@ const BrandingSchema = z.object({
  * organization creation flow exists in the current UI).
  */
 export async function createOrganizationAction(name: string, slug: string) {
+  await requireWriteAccess();
   // 1. Normalize and Validate
   const normalizedSlug = normalizeSlug(slug);
   const validation = validateOrganizationSlug(normalizedSlug);
@@ -67,10 +74,14 @@ export async function createOrganizationAction(name: string, slug: string) {
  * Restricted to the organization owner.
  */
 export async function updateOrganizationSlugAction(organizationId: string, newSlug: string) {
+  await requireWriteAccess();
   // 1. Auth check
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || user.organizationId !== organizationId) {
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
+  }
+  if (user.organizationId !== organizationId) {
+    return { success: false, error: "Unauthorized: Organization mismatch" };
   }
 
   // 2. Normalize and Validate
@@ -127,9 +138,10 @@ export async function updateOrganizationSlugAction(organizationId: string, newSl
  * Restricted to the organization owner.
  */
 export async function updateOrganizationBrandingAction(rawData: unknown) {
+  await requireWriteAccess();
   // 1. Auth & Context Resolution
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 

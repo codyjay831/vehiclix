@@ -39,18 +39,20 @@ export async function GET(
   }
 
   // Authorization check
+  const effectiveOrgId = user.isSupportMode ? user.supportOrgId : user.organizationId;
+
   if (user.role === "CUSTOMER") {
     // Customer can only access their own documents
     if (document.deal.userId !== user.id) {
       return new NextResponse("Forbidden: Access denied to this document", { status: 403 });
     }
-  } else if (user.role === "OWNER") {
-    // Owner can only access documents belonging to their organization
-    if (document.deal.organizationId !== user.organizationId) {
+  } else if (user.role === "OWNER" || (user.role === "SUPER_ADMIN" && user.isSupportMode)) {
+    // Owner or Support can access documents belonging to the resolved organization
+    if (document.deal.organizationId !== effectiveOrgId) {
       return new NextResponse("Forbidden: Access denied to this document", { status: 403 });
     }
   } else {
-    // Other roles are strictly forbidden
+    // Other roles (including Super Admin NOT in support mode) are strictly forbidden
     return new NextResponse("Forbidden", { status: 403 });
   }
 

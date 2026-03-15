@@ -1,7 +1,13 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { normalizeHostname, isPlatformHost } from "@/lib/domain-shared";
 import { logAuditEvent } from "@/lib/audit";
 import { Role, DomainStatus } from "@prisma/client";
@@ -15,9 +21,10 @@ import { Resolver } from "node:dns/promises";
  * Stored as PENDING with a unique verification token.
  */
 export async function addDomainAction(hostname: string) {
+  await requireWriteAccess();
   // 1. Auth check
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 
@@ -84,8 +91,9 @@ export async function addDomainAction(hostname: string) {
  * Deletes a domain.
  */
 export async function deleteDomainAction(domainId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 
@@ -120,8 +128,9 @@ export async function deleteDomainAction(domainId: string) {
  * Verifies a domain by checking for a DNS TXT record.
  */
 export async function verifyDomainAction(domainId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 
@@ -176,8 +185,9 @@ export async function verifyDomainAction(domainId: string) {
  * Only VERIFIED domains can be primary.
  */
 export async function setPrimaryDomainAction(domainId: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     return { success: false, error: "Unauthorized" };
   }
 

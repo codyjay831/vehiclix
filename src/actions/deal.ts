@@ -1,10 +1,16 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { DealStatus, VehicleStatus, Role, DocumentStatus, EnvelopeStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { createMockEnvelope } from "@/lib/docusign";
 import { requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 
 /**
  * Valid transitions for deal status.
@@ -32,7 +38,11 @@ const CANCELLABLE_STATES: DealStatus[] = [
 ];
 
 export async function updateDealStatusAction(dealId: string, nextStatus: DealStatus) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const deal = await db.deal.findFirst({
     where: { id: dealId, organizationId: user.organizationId },
@@ -66,7 +76,8 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
         entityType: "Deal",
         entityId: dealId,
         organizationId: user.organizationId,
-        actorRole: Role.OWNER,
+        actorId: user.id,
+        actorRole: user.role,
         metadata: { previousStatus: deal.dealStatus },
       },
     });
@@ -78,7 +89,11 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
 }
 
 export async function cancelDealAction(dealId: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const deal = await db.deal.findFirst({
     where: { id: dealId, organizationId: user.organizationId },
@@ -110,7 +125,8 @@ export async function cancelDealAction(dealId: string) {
         entityType: "Deal",
         entityId: dealId,
         organizationId: user.organizationId,
-        actorRole: Role.OWNER,
+        actorId: user.id,
+        actorRole: user.role,
         metadata: { previousStatus: deal.dealStatus },
       },
     });
@@ -122,7 +138,11 @@ export async function cancelDealAction(dealId: string) {
 }
 
 export async function initiateDocuSignAction(dealId: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const deal = await db.deal.findFirst({
     where: { id: dealId, organizationId: user.organizationId },
@@ -180,7 +200,8 @@ export async function initiateDocuSignAction(dealId: string) {
         entityType: "Deal",
         entityId: dealId,
         organizationId: user.organizationId,
-        actorRole: Role.OWNER,
+        actorId: user.id,
+        actorRole: user.role,
         metadata: { envelopeId },
       },
     });

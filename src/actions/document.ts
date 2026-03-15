@@ -1,9 +1,15 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
 import { DocumentStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { saveFile } from "@/lib/storage";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -76,7 +82,11 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
  * Marks a document as verified by the owner.
  */
 export async function verifyDocumentAction(documentId: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const document = await db.dealDocument.findUnique({
     where: { id: documentId },
@@ -105,7 +115,8 @@ export async function verifyDocumentAction(documentId: string) {
         entityType: "Deal",
         entityId: document.dealId,
         organizationId: user.organizationId,
-        actorRole: Role.OWNER,
+        actorId: user.id,
+        actorRole: user.role,
         metadata: { documentId },
       },
     }),
@@ -119,7 +130,11 @@ export async function verifyDocumentAction(documentId: string) {
  * Marks a document as rejected by the owner.
  */
 export async function rejectDocumentAction(documentId: string) {
+  await requireWriteAccess();
   const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
 
   const document = await db.dealDocument.findUnique({
     where: { id: documentId },
@@ -148,7 +163,8 @@ export async function rejectDocumentAction(documentId: string) {
         entityType: "Deal",
         entityId: document.dealId,
         organizationId: user.organizationId,
-        actorRole: Role.OWNER,
+        actorId: user.id,
+        actorRole: user.role,
         metadata: { documentId },
       },
     }),

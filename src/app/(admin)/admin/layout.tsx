@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users } from "lucide-react";
+import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users, ShieldAlert } from "lucide-react";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/actions/auth";
+import { stopSupportSession } from "@/actions/support";
 import { getOrganizationById } from "@/lib/organization";
 import { Button } from "@/components/ui/button";
 import { BillingBanner } from "@/components/admin/BillingBanner";
@@ -25,12 +26,16 @@ export default async function AdminLayout({
 }) {
   const user = await getAuthenticatedUser();
 
-  if (!user || user.role !== "OWNER") {
+  const isSupportMode = user?.role === "SUPER_ADMIN" && user.isSupportMode;
+
+  if (!user || (user.role !== "OWNER" && !isSupportMode)) {
     redirect("/login");
   }
 
-  const organization = user.organizationId 
-    ? await getOrganizationById(user.organizationId) 
+  const organizationId = isSupportMode ? user.supportOrgId : user.organizationId;
+
+  const organization = organizationId 
+    ? await getOrganizationById(organizationId) 
     : null;
   
   const orgName = organization?.name || BRANDING.companyName;
@@ -61,7 +66,11 @@ export default async function AdminLayout({
       </nav>
       <div className="p-4 border-t space-y-4">
         <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-          Owner Account
+          {isSupportMode ? (
+            <span className="text-amber-600 flex items-center gap-1">
+              <ShieldAlert className="h-3 w-3" /> Support Session
+            </span>
+          ) : "Owner Account"}
           <p className="text-xs font-bold text-foreground lowercase tracking-normal mt-1 truncate">
             {user.email}
           </p>
@@ -91,6 +100,19 @@ export default async function AdminLayout({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
+        {isSupportMode && (
+          <div className="bg-amber-500 text-white px-4 py-2 flex justify-between items-center sticky top-0 z-[100] shadow-lg">
+            <div className="flex items-center gap-2 text-sm font-black uppercase tracking-widest italic">
+              <ShieldAlert className="h-4 w-4" />
+              <span>Support Mode — Viewing <span className="underline decoration-2 underline-offset-4">{orgName}</span> as Platform Support</span>
+            </div>
+            <form action={stopSupportSession}>
+              <Button size="sm" variant="secondary" className="h-7 text-[10px] font-black uppercase tracking-widest bg-white text-amber-600 hover:bg-white/90">
+                Stop Support Session
+              </Button>
+            </form>
+          </div>
+        )}
         <BillingBanner subscription={organization?.subscription || null} />
         {/* Admin Header - Mobile */}
         <header className="lg:hidden border-b bg-background p-4 flex justify-between items-center sticky top-0 z-10">

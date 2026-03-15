@@ -1,7 +1,13 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { LeadStatus, LeadActivityType, Role } from "@prisma/client";
 import { createLeadActivity } from "@/lib/crm";
 import { revalidatePath } from "next/cache";
@@ -10,8 +16,9 @@ import { revalidatePath } from "next/cache";
  * Adds a manual note to a lead.
  */
 export async function addLeadNoteAction(leadId: string, body: string) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -41,8 +48,9 @@ export async function addLeadNoteAction(leadId: string, body: string) {
  * Updates a lead's pipeline status.
  */
 export async function updateLeadStatusAction(leadId: string, newStatus: LeadStatus) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -86,8 +94,9 @@ export async function updateLeadStatusAction(leadId: string, newStatus: LeadStat
  * Assigns a lead to a staff member.
  */
 export async function assignLeadAction(leadId: string, assigneeId: string | null) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 

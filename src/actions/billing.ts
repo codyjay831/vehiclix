@@ -1,8 +1,14 @@
 "use server";
 
+// SUPPORT MODE PROTECTION
+// All mutations must call requireWriteAccess()
+// Do not hardcode actorRole
+// Use requireUserWithOrg()
+
 import { stripe } from "@/lib/stripe";
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 import { PlanKey, Role } from "@prisma/client";
 import { BILLING_PLANS } from "@/config/billing";
 import { BRANDING } from "@/config/branding";
@@ -13,10 +19,11 @@ const APP_URL = process.env.APP_URL || `https://${BRANDING.platformDomain}`;
  * Creates a Stripe Checkout Session for a dealership subscription.
  */
 export async function createCheckoutSessionAction(planKey: PlanKey) {
+  await requireWriteAccess();
   // 1. Auth & Role Check
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
-    throw new Error("Unauthorized: Owner access required.");
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized: Owner or Support access required.");
   }
 
   const organizationId = user.organizationId;
@@ -101,10 +108,11 @@ export async function createCheckoutSessionAction(planKey: PlanKey) {
  * Creates a Stripe Billing Portal session for subscription management.
  */
 export async function createBillingPortalAction() {
+  await requireWriteAccess();
   // 1. Auth check
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== Role.OWNER || !user.organizationId) {
-    throw new Error("Unauthorized: Owner access required.");
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && !user.isSupportMode) {
+    throw new Error("Unauthorized: Owner or Support access required.");
   }
 
   const organizationId = user.organizationId;

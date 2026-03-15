@@ -7,7 +7,7 @@ import { Role, User } from "@prisma/client";
 /**
  * Resolves the authenticated user.
  */
-export async function getAuthenticatedUser(): Promise<User | null> {
+export async function getAuthenticatedUser(): Promise<User & { supportOrgId?: string | null, isSupportMode?: boolean } | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("evo_session")?.value;
   const payload = await decrypt(token);
@@ -17,8 +17,16 @@ export async function getAuthenticatedUser(): Promise<User | null> {
       where: { id: payload.userId },
     });
     
-    // Super Admin check: If role in session is SUPER_ADMIN, return user as is.
-    if (user?.role === Role.SUPER_ADMIN) return user;
+    if (!user) return null;
+
+    // Support mode logic
+    if (user.role === Role.SUPER_ADMIN && payload.supportOrgId) {
+      return {
+        ...user,
+        supportOrgId: payload.supportOrgId,
+        isSupportMode: true,
+      };
+    }
     
     return user;
   }
@@ -70,11 +78,21 @@ export async function hasRole(role: Role) {
  * Requires an authenticated user with an associated organization.
  * Throws an error if not authenticated or no organization is present.
  * For Owners/Staff, this is a non-negotiable requirement.
+ * Support mode for SUPER_ADMIN is handled here by resolving supportOrgId.
  */
 export async function requireUserWithOrg() {
   const user = await getAuthenticatedUser();
   if (!user) {
     throw new Error("Authentication required");
+  }
+
+  // Support mode resolution for Super Admin
+  if (user.role === Role.SUPER_ADMIN && user.isSupportMode && user.supportOrgId) {
+    return {
+      ...user,
+      organizationId: user.supportOrgId,
+      isSupportMode: true,
+    } as User & { organizationId: string; isSupportMode: true };
   }
   
   if (!user.organizationId) {
@@ -85,7 +103,7 @@ export async function requireUserWithOrg() {
     throw new Error("Organization context required");
   }
   
-  return user as User & { organizationId: string };
+  return user as User & { organizationId: string; isSupportMode?: boolean };
 }
 
 /**
