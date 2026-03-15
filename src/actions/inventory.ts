@@ -37,12 +37,12 @@ export async function isVinUnique(vin: string, excludeId?: string): Promise<bool
 export async function updateVehicleAction(vehicleId: string, formData: FormData) {
   const user = await requireUserWithOrg();
   
-  const vehicle = await db.vehicle.findUnique({
-    where: { id: vehicleId },
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, organizationId: user.organizationId },
     select: { vehicleStatus: true, organizationId: true },
   });
 
-  if (!vehicle || vehicle.organizationId !== user.organizationId) {
+  if (!vehicle) {
     throw new Error("Vehicle not found or access denied");
   }
   if (LOCKED_STATUSES.includes(vehicle.vehicleStatus)) {
@@ -139,12 +139,12 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
 export async function updateVehicleStatusAction(vehicleId: string, newStatus: VehicleStatus) {
   const user = await requireUserWithOrg();
 
-  const vehicle = await db.vehicle.findUnique({
-    where: { id: vehicleId },
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, organizationId: user.organizationId },
     select: { vehicleStatus: true, organizationId: true },
   });
 
-  if (!vehicle || vehicle.organizationId !== user.organizationId) {
+  if (!vehicle) {
     throw new Error("Vehicle not found or access denied");
   }
 
@@ -310,10 +310,10 @@ export async function createVehicleAction(formData: FormData) {
 /**
  * Increments the view count for a vehicle.
  */
-export async function trackVehicleViewAction(vehicleId: string) {
-  // Public action, no auth required
-  await db.vehicle.update({
-    where: { id: vehicleId },
+export async function trackVehicleViewAction(vehicleId: string, organizationId: string) {
+  // Public action, context must be validated
+  await db.vehicle.updateMany({
+    where: { id: vehicleId, organizationId, vehicleStatus: "LISTED" },
     data: { views: { increment: 1 } },
   });
 }
@@ -321,10 +321,10 @@ export async function trackVehicleViewAction(vehicleId: string) {
 /**
  * Increments the share count for a vehicle.
  */
-export async function trackVehicleShareAction(vehicleId: string) {
-  // Usually triggered by admin share actions, but can be public
-  await db.vehicle.update({
-    where: { id: vehicleId },
+export async function trackVehicleShareAction(vehicleId: string, organizationId: string) {
+  // Public action, context must be validated
+  await db.vehicle.updateMany({
+    where: { id: vehicleId, organizationId, vehicleStatus: "LISTED" },
     data: { shares: { increment: 1 } },
   });
   

@@ -28,7 +28,7 @@ export function DistributionPanel({ vehicle }: DistributionPanelProps) {
   const [copiedLink, setCopiedLink] = React.useState(false);
 
   const copyListingLink = async () => {
-    const url = `${window.location.origin}/inventory/${vehicle.id}?org=${vehicle.organization.slug}`;
+    const url = `${window.location.origin}/${vehicle.organization.slug}/inventory/${vehicle.id}`;
     await navigator.clipboard.writeText(url);
     await trackVehicleShareAction(vehicle.id);
     setCopiedLink(true);
@@ -37,7 +37,7 @@ export function DistributionPanel({ vehicle }: DistributionPanelProps) {
   };
 
   const openSmsShare = async () => {
-    const url = `${window.location.origin}/inventory/${vehicle.id}?org=${vehicle.organization.slug}`;
+    const url = `${window.location.origin}/${vehicle.organization.slug}/inventory/${vehicle.id}`;
     const text = `Check out this ${vehicle.year} ${vehicle.make} ${vehicle.model}: ${url}`;
     window.open(`sms:?body=${encodeURIComponent(text)}`);
     await trackVehicleShareAction(vehicle.id);
@@ -64,7 +64,7 @@ export function DistributionPanel({ vehicle }: DistributionPanelProps) {
               {copiedLink ? "Copied" : "Copy Link"}
             </Button>
             <Button variant="outline" className="px-3 h-10" asChild title="Open Public Page">
-              <a href={`/inventory/${vehicle.id}?org=${vehicle.organization.slug}`} target="_blank">
+              <a href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`} target="_blank">
                 <Globe className="h-4 w-4" />
               </a>
             </Button>

@@ -28,7 +28,7 @@ export async function getAdminDeals(organizationId: string) {
  * Fetches a single deal by ID with full context for the detail view.
  */
 export async function getAdminDealDetail(organizationId: string, id: string) {
-  return db.deal.findUnique({
+  return db.deal.findFirst({
     where: { id, organizationId },
     include: {
       vehicle: true,

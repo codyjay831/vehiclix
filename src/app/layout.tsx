@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(`https://${BRANDING.platformDomain}`),
   title: {
     template: BRANDING.metadata.titleTemplate,
     default: BRANDING.metadata.defaultTitle,

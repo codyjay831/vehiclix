@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
+import { normalizeSlug } from "../src/lib/organization";
 
 const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });
@@ -14,12 +15,25 @@ async function main() {
   console.log("Seeding initial organization and admin user...");
 
   // 1. Create Default Organization (Evo Motors)
+  const defaultSlug = normalizeSlug("Evo Motors");
   const evoMotors = await prisma.organization.upsert({
-    where: { slug: "evo-motors" },
+    where: { slug: defaultSlug },
     update: {},
     create: {
       name: "Evo Motors",
-      slug: "evo-motors",
+      slug: defaultSlug,
+    },
+  });
+
+  // Ensure Branding exists for the default org
+  await prisma.organizationBranding.upsert({
+    where: { organizationId: evoMotors.id },
+    update: {},
+    create: {
+      organizationId: evoMotors.id,
+      heroHeadline: "Experience Electric Excellence.",
+      heroSubheadline: "A highly-curated showroom of high-performance electric vehicles. Transparent specs, premium media, and home energy integration — redefining the used EV journey.",
+      aboutBlurb: "Evo Motors was born from a simple observation: the transition to electric mobility deserves a purchasing experience as sophisticated as the vehicles themselves.",
     },
   });
 
@@ -73,12 +87,17 @@ async function main() {
   ];
 
   for (const item of backfillModels) {
-    const result = await (item.model as any).updateMany({
-      where: { organizationId: null },
-      data: { organizationId: evoMotors.id },
-    });
-    if (result.count > 0) {
-      console.log(`   Backfilled ${result.count} ${item.name} records.`);
+    try {
+      const result = await (item.model as any).updateMany({
+        where: { organizationId: null },
+        data: { organizationId: evoMotors.id },
+      });
+      if (result.count > 0) {
+        console.log(`   Backfilled ${result.count} ${item.name} records.`);
+      }
+    } catch (e) {
+      // Skip if the model doesn't allow null organizationId
+      // console.log(`   Skipping backfill for ${item.name} (required field)`);
     }
   }
 

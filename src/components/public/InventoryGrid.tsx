@@ -1,8 +1,11 @@
+"use client";
+
 import { VehicleWithMedia } from "@/types";
 import { InventoryCard } from "./InventoryCard";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { CarFront, ArrowRight } from "lucide-react";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 interface InventoryGridProps {
   vehicles: VehicleWithMedia[];
@@ -11,6 +14,7 @@ interface InventoryGridProps {
 }
 
 export function InventoryGrid({ vehicles, totalCount, hasFilters }: InventoryGridProps) {
+  const tenant = useTenant();
   if (totalCount === 0 && !hasFilters) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 max-w-md mx-auto">
@@ -23,7 +27,7 @@ export function InventoryGrid({ vehicles, totalCount, hasFilters }: InventoryGri
             Check back soon or tell us what you're looking for, and our team will search our network to find it for you.
           </p>
         </div>
-        <Link href="/request-vehicle">
+        <Link href={tenant ? `/${tenant.slug}/request-vehicle` : "/request-vehicle"}>
           <Button size="lg" className="rounded-full shadow-lg group">
             Request a Vehicle
             <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
@@ -38,14 +42,14 @@ export function InventoryGrid({ vehicles, totalCount, hasFilters }: InventoryGri
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
         <h3 className="text-xl font-bold">No vehicles match your filters.</h3>
         <p className="text-muted-foreground">Try clearing some filters or adjust your search criteria.</p>
-        <Link href="/inventory">
+        <Link href={tenant ? `/${tenant.slug}/inventory` : "/inventory"}>
           <Button variant="outline" className="rounded-full">
             Clear all filters
           </Button>
         </Link>
         <p className="text-sm text-muted-foreground pt-4">
           Can't find what you need?{" "}
-          <Link href="/request-vehicle" className="text-primary hover:underline font-bold">
+          <Link href={tenant ? `/${tenant.slug}/request-vehicle` : "/request-vehicle"} className="text-primary hover:underline font-bold">
             Request a Vehicle
           </Link>
         </p>

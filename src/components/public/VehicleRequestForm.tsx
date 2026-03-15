@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { submitVehicleRequestAction } from "@/actions/request";
 import { Loader2, ArrowRight } from "lucide-react";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 const requestSchema = z.object({
   // Section 1: Vehicle Preferences
@@ -59,6 +60,7 @@ type RequestFormValues = z.infer<typeof requestSchema>;
 
 export function VehicleRequestForm() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const tenant = useTenant();
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema) as any,
@@ -75,9 +77,13 @@ export function VehicleRequestForm() {
   });
 
   const onSubmit = async (values: RequestFormValues) => {
+    if (!tenant) return;
     setIsSubmitting(true);
     try {
-      await submitVehicleRequestAction(values);
+      await submitVehicleRequestAction({
+        ...values,
+        organizationId: tenant.id,
+      });
     } catch (error: any) {
       console.error(error);
       setIsSubmitting(false);

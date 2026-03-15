@@ -26,7 +26,7 @@ interface AuditLogOptions {
   entityType: string;
   entityId: string;
   metadata?: any;
-  organizationId: string; // Required for multi-tenant hardening
+  organizationId?: string; // Optional for multi-tenant hardening, can be null for system events
 }
 
 /**

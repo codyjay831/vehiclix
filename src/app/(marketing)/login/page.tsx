@@ -120,10 +120,7 @@ function LoginForm() {
           </CardContent>
           <CardFooter className="bg-muted/30 border-t-2 border-primary/5 p-8 justify-center">
             <p className="text-xs font-bold text-muted-foreground italic">
-              Don&apos;t have an account?{" "}
-              <Link href="/register" className="text-primary hover:underline underline-offset-4 font-black uppercase tracking-widest ml-1">
-                Register
-              </Link>
+              Please register through your dealership&apos;s showroom page.
             </p>
           </CardFooter>
         </Card>

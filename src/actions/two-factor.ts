@@ -9,7 +9,6 @@ import { TOTP } from "otplib";
 const authenticator = new TOTP();
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
-import { getDefaultOrganization } from "@/lib/organization";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -72,21 +71,18 @@ export async function verify2FAAction(formData: FormData) {
   const isValid = result.valid;
 
   if (!isValid) {
-    const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
     await logAuditEvent({
       eventType: "auth.2fa_failed",
       actorId: user.id,
       actorRole: user.role,
       entityType: "User",
       entityId: user.id,
-      organizationId: org.id,
+      organizationId: user.organizationId || undefined,
     });
     return { error: "Invalid verification code" };
   }
 
   await setVerifiedSessionCookie(session);
-
-  const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
 
   await logAuditEvent({
     eventType: "auth.2fa_verified",
@@ -94,7 +90,7 @@ export async function verify2FAAction(formData: FormData) {
     actorRole: user.role,
     entityType: "User",
     entityId: user.id,
-    organizationId: org.id,
+    organizationId: user.organizationId || undefined,
   });
 
   redirect(from);

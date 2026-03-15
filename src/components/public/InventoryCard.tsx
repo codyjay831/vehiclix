@@ -1,14 +1,18 @@
+"use client";
+
 import Link from "next/link";
 import { VehicleWithMedia, DRIVETRAIN_LABELS } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 interface InventoryCardProps {
   vehicle: VehicleWithMedia;
 }
 
 export function InventoryCard({ vehicle }: InventoryCardProps) {
+  const tenant = useTenant();
   const primaryImage = vehicle.media[0]?.url;
 
   return (
@@ -63,7 +67,7 @@ export function InventoryCard({ vehicle }: InventoryCardProps) {
       </CardContent>
       
       <CardFooter className="px-0 pb-2">
-        <Link href={`/inventory/${vehicle.id}`} className="w-full">
+        <Link href={tenant ? `/${tenant.slug}/inventory/${vehicle.id}` : `/inventory/${vehicle.id}`} className="w-full">
           <Button variant="outline" className="w-full rounded-full border-2 hover:bg-primary hover:text-primary-foreground transition-all">
             View Details
           </Button>

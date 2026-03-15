@@ -1,10 +1,11 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { ContactMethod, InquiryStatus, Role } from "@prisma/client";
+import { ContactMethod, InquiryStatus, Role, LeadSource } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { notifyDealerOfLead } from "@/lib/notifications";
+import { ensureLeadForInbound } from "@/lib/crm";
 
 interface InquiryData {
   vehicleId: string;
@@ -35,13 +36,13 @@ export async function submitInquiryAction(data: InquiryData) {
   });
 
   // Get vehicle to resolve organization ownership
-  const vehicle = await db.vehicle.findUnique({
-    where: { id: vehicleId },
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, vehicleStatus: "LISTED" },
     select: { organizationId: true, year: true, make: true, model: true },
   });
 
-  if (!vehicle || !vehicle.organizationId) {
-    throw new Error("Vehicle not found or organization not assigned");
+  if (!vehicle) {
+    throw new Error("Vehicle not found or no longer available");
   }
 
   const vehicleInfo = `${vehicle.year} ${vehicle.make} ${vehicle.model}`;
@@ -84,6 +85,18 @@ export async function submitInquiryAction(data: InquiryData) {
     },
   });
 
+  // NEW: Feed the CRM Lead Pipeline
+  await ensureLeadForInbound({
+    organizationId: vehicle.organizationId,
+    source: LeadSource.INQUIRY,
+    customerEmail: email.toLowerCase(),
+    customerName: `${firstName} ${lastName}`,
+    customerPhone: phone,
+    vehicleId,
+    customerId: user.id,
+    initialActivityBody: `Vehicle inquiry received for ${vehicleInfo}.${message ? ` Message: ${message}` : ""}`,
+  });
+
   // Log Activity Event
   await db.activityEvent.create({
     data: {
@@ -119,12 +132,12 @@ export async function submitInquiryAction(data: InquiryData) {
 export async function updateInquiryStatusAction(id: string, newStatus: InquiryStatus) {
   const user = await requireUserWithOrg();
 
-  const inquiry = await db.vehicleInquiry.findUnique({
-    where: { id },
+  const inquiry = await db.vehicleInquiry.findFirst({
+    where: { id, organizationId: user.organizationId },
     select: { inquiryStatus: true, userId: true, organizationId: true },
   });
 
-  if (!inquiry || inquiry.organizationId !== user.organizationId) {
+  if (!inquiry) {
     throw new Error("Inquiry not found or access denied");
   }
 
@@ -179,12 +192,12 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
 export async function updateInquiryNotesAction(id: string, notes: string) {
   const user = await requireUserWithOrg();
 
-  const inquiry = await db.vehicleInquiry.findUnique({
-    where: { id },
+  const inquiry = await db.vehicleInquiry.findFirst({
+    where: { id, organizationId: user.organizationId },
     select: { organizationId: true },
   });
 
-  if (!inquiry || inquiry.organizationId !== user.organizationId) {
+  if (!inquiry) {
     throw new Error("Inquiry not found or access denied");
   }
 

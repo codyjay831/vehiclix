@@ -17,6 +17,7 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  branding        OrganizationBranding?
   users           User[]
   vehicles        Vehicle[]
   deals           Deal[]
@@ -25,6 +26,104 @@ model Organization {
   activityEvents  ActivityEvent[]
   tradeInCaptures TradeInCapture[]
   energyRequests  EnergyServiceRequest[]
+  domains         OrganizationDomain[]
+  homepage        OrganizationHomepage?
+  leads           Lead[]
+  leadActivities  LeadActivity[]
+  subscription    OrganizationSubscription?
+}
+
+model OrganizationHomepage {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Announcement Bar
+  showPromo Boolean @default(false)
+  promoText String? @db.VarChar(100)
+
+  // Hero Section
+  heroHeadline        String? @db.VarChar(100)
+  heroSubheadline     String? @db.Text
+  heroPrimaryCtaLabel String? @db.VarChar(30)
+  heroPrimaryCtaRoute String? @default("inventory") // inventory, contact, request-vehicle, register
+
+  // Trust Highlights (Structured JSON for repeating items)
+  showTrustHighlights Boolean @default(true)
+  trustHighlightsJson Json? // Array of { icon: string, title: string, description: string }
+
+  // Featured Inventory
+  showFeaturedInventory Boolean @default(true)
+
+  // Testimonial
+  showTestimonial   Boolean @default(false)
+  testimonialQuote  String? @db.Text
+  testimonialAuthor String? @db.VarChar(100)
+
+  // About Teaser
+  showAboutTeaser Boolean @default(true)
+  aboutTeaser     String? @db.Text // Defaults to OrganizationBranding.aboutBlurb if null
+
+  // Contact/Service CTA
+  showContactCta     Boolean @default(true)
+  contactCtaHeadline String? @db.VarChar(100)
+  contactCtaBody     String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrganizationBranding {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Visuals
+  logoUrl      String?
+  primaryColor String? @default("#1A1A1A")
+
+  // Homepage Content
+  heroHeadline    String?
+  heroSubheadline String? @db.Text
+
+  // Marketing Content
+  aboutBlurb String? @db.Text
+
+  // Contact Overrides
+  contactEmail String?
+  contactPhone String?
+  address      String? @db.Text
+
+  // SEO/Social
+  socialImageUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrganizationDomain {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  hostname  String       @unique // Normalized lowercase hostname
+  isPrimary Boolean      @default(false)
+  status    DomainStatus @default(PENDING)
+
+  verificationToken String    @unique
+  verifiedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([hostname, status])
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
 }
 
 model User {
@@ -51,6 +150,9 @@ model User {
   energyServiceRequests EnergyServiceRequest[]
   inquiries             VehicleInquiry[]
   tradeInCaptures       TradeInCapture[]
+  customerLeads         Lead[]                 @relation("LeadCustomer")
+  assignedLeads         Lead[]                 @relation("LeadAssignee")
+  leadActivities        LeadActivity[]
 
   @@index([organizationId])
 }
@@ -89,6 +191,7 @@ model Vehicle {
   inquiries       VehicleInquiry[]
   deals           Deal[]
   tradeInCaptures TradeInCapture[]
+  leads           Lead[]
 
   @@index([vehicleStatus])
   @@index([organizationId])
@@ -345,8 +448,8 @@ model ActivityEvent {
   createdAt  DateTime @default(now())
 
   // Tenant ownership
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([entityType, entityId])
   @@index([organizationId])
@@ -481,4 +584,124 @@ enum Priority {
   HIGH
   MEDIUM
   LOW
+}
+
+// --- CRM MODELS ---
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  APPOINTMENT
+  NEGOTIATING
+  WON
+  LOST
+}
+
+enum LeadSource {
+  INQUIRY
+  VEHICLE_REQUEST
+  RESERVATION
+  MANUAL
+}
+
+enum LeadActivityType {
+  NOTE
+  STAGE_CHANGE
+  INBOUND
+  ASSIGNMENT
+  SYSTEM
+}
+
+model Lead {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Link to existing customer if available
+  customerId      String?
+  customer        User?        @relation("LeadCustomer", fields: [customerId], references: [id])
+
+  // Contextual vehicle
+  vehicleId       String?
+  vehicle         Vehicle?     @relation(fields: [vehicleId], references: [id])
+
+  // Assigned staff member
+  assignedToId    String?
+  assignedTo      User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
+
+  status          LeadStatus   @default(NEW)
+  source          LeadSource
+
+  // Denormalized contact snapshot (Critical for guest leads)
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+
+  lastActivityAt  DateTime?    @default(now())
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  activities      LeadActivity[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, lastActivityAt])
+}
+
+model LeadActivity {
+  id             String           @id @default(uuid())
+  leadId         String
+  lead           Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // The staff member or system that performed the action
+  actorUserId    String?
+  actorUser      User?            @relation(fields: [actorUserId], references: [id])
+
+  type           LeadActivityType
+  body           String?          @db.Text
+  metadataJson   Json?
+
+  createdAt      DateTime         @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// --- BILLING MODELS ---
+
+enum SubscriptionStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum PlanKey {
+  STARTER
+  PRO
+  PREMIUM
+}
+
+model OrganizationSubscription {
+  id                   String             @id @default(uuid())
+  organizationId       String             @unique
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  planKey              PlanKey?
+  status               SubscriptionStatus @default(NONE)
+
+  currentPeriodEnd     DateTime?
+  trialEndsAt          DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 }

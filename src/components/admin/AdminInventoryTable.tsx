@@ -86,7 +86,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
   };
 
   const copyListingLink = async (vehicleId: string, orgSlug: string) => {
-    const url = `${window.location.origin}/inventory/${vehicleId}?org=${orgSlug}`;
+    const url = `${window.location.origin}/${orgSlug}/inventory/${vehicleId}`;
     await navigator.clipboard.writeText(url);
     await trackVehicleShareAction(vehicleId);
     setCopiedId(vehicleId);
@@ -223,7 +223,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
                             <Link
-                              href={`/inventory/${vehicle.id}?org=${vehicle.organization.slug}`}
+                              href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`}
                               target="_blank"
                             >
                               <ExternalLink className="mr-2 h-4 w-4" />

@@ -29,7 +29,7 @@ export function ListingGeneratorModal({ vehicle, type, isOpen, onClose }: Listin
 
   React.useEffect(() => {
     if (vehicle) {
-      const url = `${window.location.origin}/inventory/${vehicle.id}?org=${vehicle.organization.slug}`;
+      const url = `${window.location.origin}/${vehicle.organization.slug}/inventory/${vehicle.id}`;
       const highlights = (vehicle.highlights || [])
         .map((h) => `• ${h}`)
         .join("\n");

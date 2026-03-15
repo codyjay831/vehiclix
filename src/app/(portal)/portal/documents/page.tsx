@@ -23,6 +23,11 @@ export default async function DocumentsPage() {
 
   const activeDeal = await getActiveDeal(user.id, user.organizationId);
 
+  const organization = await db.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { slug: true, name: true },
+  });
+
   if (!activeDeal) {
     return (
       <div className="max-w-7xl mx-auto px-6 py-24 text-center space-y-8 animate-in fade-in duration-700">
@@ -39,7 +44,7 @@ export default async function DocumentsPage() {
             </p>
           </div>
           <div className="pt-6">
-            <Link href="/inventory">
+            <Link href={organization ? `/${organization.slug}/inventory` : "/inventory"}>
               <Button className="rounded-full h-14 px-12 font-black uppercase tracking-widest shadow-xl">
                 Browse Inventory
               </Button>
@@ -105,7 +110,7 @@ export default async function DocumentsPage() {
           <div className="space-y-2">
             <h3 className="text-xl font-black uppercase tracking-tight italic">Your Privacy is Protected</h3>
             <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">
-              All documents are stored in a private, encrypted environment. They are only accessible by {BRANDING.companyName} authorized staff for the purpose of verifying your transaction. We never share your personal data with third parties without your explicit consent.
+              All documents are stored in a private, encrypted environment. They are only accessible by {organization?.name || BRANDING.companyName} authorized staff for the purpose of verifying your transaction. We never share your personal data with third parties without your explicit consent.
             </p>
           </div>
         </div>

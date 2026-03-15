@@ -1,10 +1,16 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Search, ArrowRight, Zap, Battery, Home } from "lucide-react";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 import { BRANDING } from "@/config/branding";
 
 export function EducationSection() {
+  const tenant = useTenant();
+  const companyName = tenant?.name || BRANDING.companyName;
+
   const sections = [
     {
       title: "Curated Inventory",
@@ -36,7 +42,7 @@ export function EducationSection() {
           <div className="space-y-12">
             <div className="space-y-4">
               <h2 className="text-sm font-black uppercase tracking-[0.3em] text-primary">
-                The {BRANDING.companyName.split(' ')[0]} Standard
+                The {companyName.split(' ')[0]} Standard
               </h2>
               <h3 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-none italic">
                 Transparent <br />EV Buying.
@@ -84,7 +90,7 @@ export function EducationSection() {
                   Transparent Target Pricing
                 </li>
               </ul>
-              <Link href="/request-vehicle" className="block pt-4">
+              <Link href={tenant ? `/${tenant.slug}/request-vehicle` : "/"} className="block pt-4">
                 <Button size="lg" className="rounded-full px-8 h-14 font-black uppercase tracking-widest shadow-lg group">
                   Find My EV
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />

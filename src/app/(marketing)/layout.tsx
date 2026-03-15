@@ -7,15 +7,11 @@ export default async function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getAuthenticatedUser();
-
   return (
     <div className="flex flex-col min-h-screen">
-      <Navbar userRole={user?.role || null} />
       <main className="flex-1">
         {children}
       </main>
-      <Footer />
     </div>
   );
 }

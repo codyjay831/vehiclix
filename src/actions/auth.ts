@@ -7,7 +7,7 @@ import { encrypt, decrypt } from "@/lib/session";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/audit";
-import { getDefaultOrganization, getOrganizationById } from "@/lib/organization";
+import { getOrganizationById } from "@/lib/organization";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -71,15 +71,13 @@ export async function loginAction(formData: FormData) {
     // Set a "partial" session where isTwoFactorVerified is false
     await setSessionCookie(user, false);
 
-    const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
-
     await logAuditEvent({
       eventType: "auth.2fa_prompted",
       actorId: user.id,
       actorRole: user.role,
       entityType: "User",
       entityId: user.id,
-      organizationId: org.id,
+      organizationId: user.organizationId || undefined,
     });
 
     const from = formData.get("from") as string;
@@ -91,15 +89,13 @@ export async function loginAction(formData: FormData) {
 
   await setSessionCookie(user);
 
-  const org = user.organizationId ? { id: user.organizationId } : await getDefaultOrganization();
-
   await logAuditEvent({
     eventType: "auth.login",
     actorId: user.id,
     actorRole: user.role,
     entityType: "User",
     entityId: user.id,
-    organizationId: org.id,
+    organizationId: user.organizationId || undefined,
     metadata: {
       email: user.email,
     },
@@ -136,10 +132,9 @@ export async function registerAction(formData: FormData) {
   if (existingUser) {
     if (existingUser.isStub) {
       // Resolve organization for upgrade
-      let finalOrgId = organizationId || existingUser.organizationId;
+      const finalOrgId = organizationId || existingUser.organizationId;
       if (!finalOrgId) {
-        const org = await getDefaultOrganization();
-        finalOrgId = org.id;
+        return { error: "Organization context is required for registration" };
       }
 
       // Upgrade stub account in place
@@ -160,12 +155,17 @@ export async function registerAction(formData: FormData) {
   } else {
     // Resolve organization: 
     // 1. Check if an explicit organizationId was provided (pilot override)
-    // 2. Fall back to default Evo Motors
-    let finalOrgId = organizationId;
+    // 2. Fall back to error (No more Evo Motors defaults)
+    const finalOrgId = organizationId;
     
     if (!finalOrgId) {
-      const org = await getDefaultOrganization();
-      finalOrgId = org.id;
+      return { error: "Organization context is required for registration" };
+    }
+
+    // NEW: Validate organization exists before creating user
+    const orgExists = await db.organization.findUnique({ where: { id: finalOrgId } });
+    if (!orgExists) {
+      return { error: "Invalid organization context" };
     }
 
     // Create new customer
@@ -209,15 +209,13 @@ export async function logoutAction() {
   const session = await decrypt(token);
 
   if (session) {
-    const org = session.organizationId ? { id: session.organizationId } : await getDefaultOrganization();
-
     await logAuditEvent({
       eventType: "auth.logout",
       actorId: session.userId,
       actorRole: session.role,
       entityType: "User",
       entityId: session.userId,
-      organizationId: org.id,
+      organizationId: session.organizationId || undefined,
     });
   }
 

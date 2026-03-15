@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu } from "lucide-react";
+import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users } from "lucide-react";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/actions/auth";
 import { getOrganizationById } from "@/lib/organization";
 import { Button } from "@/components/ui/button";
+import { BillingBanner } from "@/components/admin/BillingBanner";
 import {
   Sheet,
   SheetContent,
@@ -37,9 +38,11 @@ export default async function AdminLayout({
 
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+    { label: "Leads", href: "/admin/leads", icon: Users },
     { label: "Inventory", href: "/admin/inventory", icon: CarFront },
     { label: "Inquiries", href: "/admin/inquiries", icon: MessageSquare },
     { label: "Deals", href: "/admin/deals", icon: FileText },
+    { label: "Settings", href: "/admin/settings", icon: Settings },
   ];
 
   const sidebarContent = (
@@ -88,6 +91,7 @@ export default async function AdminLayout({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
+        <BillingBanner subscription={organization?.subscription || null} />
         {/* Admin Header - Mobile */}
         <header className="lg:hidden border-b bg-background p-4 flex justify-between items-center sticky top-0 z-10">
           <Link href="/admin" className="font-bold">{orgPrefix} Admin</Link>

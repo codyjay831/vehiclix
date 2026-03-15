@@ -1,13 +1,14 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { VehicleRequestStatus, Role, Prisma, Priority } from "@prisma/client";
+import { VehicleRequestStatus, Role, Priority, LeadSource } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
-import { getDefaultOrganization } from "@/lib/organization";
+import { requireUserWithOrg } from "@/lib/auth";
+import { ensureLeadForInbound } from "@/lib/crm";
 
 interface VehicleRequestData {
+  organizationId: string;
   make: string;
   model: string;
   yearMin?: number;
@@ -32,14 +33,16 @@ interface VehicleRequestData {
  */
 export async function submitVehicleRequestAction(data: VehicleRequestData) {
   const {
+    organizationId,
     make,
     model,
     yearMin,
     yearMax,
-    budgetMax,
+    trim,
     mileageMax,
     colorPrefs,
     features,
+    budgetMax,
     timeline,
     financingInterest,
     tradeInInterest,
@@ -50,14 +53,21 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
     phone,
   } = data;
 
-  // Identity Resolution (Stub Account)
+  if (!organizationId) {
+    throw new Error("Organization context is required");
+  }
+
+  // 1. Validate organization exists
+  const org = await db.organization.findUnique({ where: { id: organizationId } });
+  if (!org) {
+    throw new Error("Invalid organization context");
+  }
+
+  // 2. Identity Resolution (Stub Account)
   let user = await db.user.findUnique({
     where: { email: email.toLowerCase() },
     select: { id: true, organizationId: true },
   });
-
-  // Resolve organization (default for Phase 2)
-  const org = await getDefaultOrganization();
 
   if (!user) {
     user = await db.user.create({
@@ -72,14 +82,13 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
       },
     });
   } else if (!user.organizationId) {
-    // If an existing stub account is missing an organization, assign it based on this request
     user = await db.user.update({
       where: { id: user.id },
       data: { organizationId: org.id },
     });
   }
 
-  // Create Vehicle Request
+  // 3. Create Vehicle Request
   const request = await db.vehicleRequest.create({
     data: {
       userId: user.id,
@@ -88,7 +97,7 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
       model,
       yearMin,
       yearMax,
-      budgetMax: new Prisma.Decimal(budgetMax),
+      budgetMax,
       mileageMax,
       colorPrefs,
       features,
@@ -100,7 +109,18 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
     },
   });
 
-  // Log Activity Event
+  // 4. Feed the CRM Lead Pipeline
+  await ensureLeadForInbound({
+    organizationId: org.id,
+    source: LeadSource.VEHICLE_REQUEST,
+    customerEmail: email.toLowerCase(),
+    customerName: `${firstName} ${lastName}`,
+    customerPhone: phone,
+    customerId: user.id,
+    initialActivityBody: `Vehicle sourcing request received for ${make} ${model}. Budget: $${budgetMax.toLocaleString()}.`,
+  });
+
+  // 5. Log Activity Event
   await db.activityEvent.create({
     data: {
       eventType: "request.submitted",
@@ -126,12 +146,12 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
 export async function updateRequestStatusAction(id: string, newStatus: VehicleRequestStatus) {
   const user = await requireUserWithOrg();
 
-  const request = await db.vehicleRequest.findUnique({
-    where: { id },
+  const request = await db.vehicleRequest.findFirst({
+    where: { id, organizationId: user.organizationId },
     select: { requestStatus: true, organizationId: true },
   });
 
-  if (!request || request.organizationId !== user.organizationId) {
+  if (!request) {
     throw new Error("Request not found or access denied");
   }
 
@@ -187,12 +207,12 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
 export async function updateRequestPriorityAction(id: string, priority: Priority) {
   const user = await requireUserWithOrg();
 
-  const request = await db.vehicleRequest.findUnique({
-    where: { id },
+  const request = await db.vehicleRequest.findFirst({
+    where: { id, organizationId: user.organizationId },
     select: { organizationId: true },
   });
 
-  if (!request || request.organizationId !== user.organizationId) {
+  if (!request) {
     throw new Error("Request not found or access denied");
   }
 
@@ -211,12 +231,12 @@ export async function updateRequestPriorityAction(id: string, priority: Priority
 export async function updateRequestNotesAction(id: string, notes: string) {
   const user = await requireUserWithOrg();
 
-  const request = await db.vehicleRequest.findUnique({
-    where: { id },
+  const request = await db.vehicleRequest.findFirst({
+    where: { id, organizationId: user.organizationId },
     select: { organizationId: true },
   });
 
-  if (!request || request.organizationId !== user.organizationId) {
+  if (!request) {
     throw new Error("Request not found or access denied");
   }
 

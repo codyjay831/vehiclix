@@ -2,7 +2,6 @@ import * as React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
-import { getDefaultOrganization } from "@/lib/organization";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ArrowRight, Mail, LayoutDashboard, CarFront } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,22 +13,27 @@ interface ConfirmationPageProps {
 
 export default async function ReservationConfirmationPage({ params }: ConfirmationPageProps) {
   const { dealId } = await params;
-  const org = await getDefaultOrganization();
 
-  const deal = await db.deal.findFirst({
+  const deal = await db.deal.findUnique({
     where: { 
       id: dealId,
-      organizationId: org.id
     },
     include: {
       vehicle: true,
       user: true,
+      organization: true,
     },
   });
 
-  if (!deal) {
+  if (!deal || !deal.organization) {
     notFound();
   }
+
+  const org = deal.organization;
+  const companyName = org.name;
+  const nameParts = companyName.split(' ');
+  const firstPart = nameParts[0];
+  const restPart = nameParts.slice(1).join(' ');
 
   return (
     <div className="min-h-screen bg-muted/10 pt-32 pb-20 px-6 lg:px-8 max-w-7xl mx-auto w-full">
@@ -43,7 +47,7 @@ export default async function ReservationConfirmationPage({ params }: Confirmati
             Vehicle <br /><span className="text-primary">Reserved!</span>
           </h1>
           <p className="text-xl text-muted-foreground font-medium max-w-md mx-auto leading-relaxed">
-            Your {deal.vehicle.year} {deal.vehicle.make} {deal.vehicle.model} is now held for you.
+            Your {deal.vehicle.year} {deal.vehicle.make} {deal.vehicle.model} is now held for you at {companyName}.
           </p>
         </div>
 
@@ -111,7 +115,7 @@ export default async function ReservationConfirmationPage({ params }: Confirmati
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Button>
           </Link>
-          <Link href="/inventory" className="w-full sm:w-auto">
+          <Link href={`/${org.slug}/inventory`} className="w-full sm:w-auto">
             <Button variant="outline" size="lg" className="w-full sm:w-auto h-16 px-12 rounded-full font-bold uppercase tracking-widest border-2">
               Back to Showroom
             </Button>
@@ -120,7 +124,7 @@ export default async function ReservationConfirmationPage({ params }: Confirmati
 
         <div className="pt-12 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
           <Mail className="h-3 w-3 text-primary" />
-          Questions? {BRANDING.contact.email}
+          Questions? {org.phone || BRANDING.contact.email}
         </div>
       </div>
     </div>

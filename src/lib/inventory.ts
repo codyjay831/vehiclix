@@ -39,7 +39,7 @@ export async function getAdminInventory(organizationId: string): Promise<Vehicle
  * Fetches a single vehicle for admin editing.
  */
 export async function getVehicleForEdit(organizationId: string, id: string) {
-  return db.vehicle.findUnique({
+  return db.vehicle.findFirst({
     where: { id, organizationId },
   });
 }
@@ -48,7 +48,7 @@ export async function getVehicleForEdit(organizationId: string, id: string) {
  * Fetches a single vehicle with organization context, media, and metrics for admin view.
  */
 export async function getAdminVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
-  return db.vehicle.findUnique({
+  return db.vehicle.findFirst({
     where: { id, organizationId },
     include: {
       media: {

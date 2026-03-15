@@ -34,12 +34,12 @@ const CANCELLABLE_STATES: DealStatus[] = [
 export async function updateDealStatusAction(dealId: string, nextStatus: DealStatus) {
   const user = await requireUserWithOrg();
 
-  const deal = await db.deal.findUnique({
-    where: { id: dealId },
+  const deal = await db.deal.findFirst({
+    where: { id: dealId, organizationId: user.organizationId },
     select: { dealStatus: true, vehicleId: true, organizationId: true },
   });
 
-  if (!deal || deal.organizationId !== user.organizationId) {
+  if (!deal) {
     throw new Error("Deal not found or access denied");
   }
 
@@ -80,12 +80,12 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
 export async function cancelDealAction(dealId: string) {
   const user = await requireUserWithOrg();
 
-  const deal = await db.deal.findUnique({
-    where: { id: dealId },
+  const deal = await db.deal.findFirst({
+    where: { id: dealId, organizationId: user.organizationId },
     select: { dealStatus: true, vehicleId: true, organizationId: true },
   });
 
-  if (!deal || deal.organizationId !== user.organizationId) {
+  if (!deal) {
     throw new Error("Deal not found or access denied");
   }
 
@@ -124,8 +124,8 @@ export async function cancelDealAction(dealId: string) {
 export async function initiateDocuSignAction(dealId: string) {
   const user = await requireUserWithOrg();
 
-  const deal = await db.deal.findUnique({
-    where: { id: dealId },
+  const deal = await db.deal.findFirst({
+    where: { id: dealId, organizationId: user.organizationId },
     include: {
       documents: true,
       envelopes: {
@@ -138,7 +138,7 @@ export async function initiateDocuSignAction(dealId: string) {
     },
   });
 
-  if (!deal || (deal as any).organizationId !== user.organizationId) {
+  if (!deal) {
     throw new Error("Deal not found or access denied");
   }
 

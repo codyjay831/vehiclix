@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import Link from "next/link";
 import { Deal, Vehicle, VehicleMedia, VehicleInquiry, VehicleRequest, DealStatus } from "@prisma/client";
@@ -7,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CarFront, FileText, LayoutDashboard, History, Search, HistoryIcon } from "lucide-react";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 interface ActiveDealWithContext extends Deal {
   vehicle: Vehicle & {
@@ -23,6 +26,8 @@ interface PortalDashboardContentProps {
 import { BRANDING } from "@/config/branding";
 
 export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequests }: PortalDashboardContentProps) {
+  const tenant = useTenant();
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
       {/* Active Deal Section (Main Column) */}
@@ -86,7 +91,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                   Continue Purchase
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
-                <Link href={`/inventory/${activeDeal.vehicleId}`}>
+                <Link href={tenant ? `/${tenant.slug}/inventory/${activeDeal.vehicleId}` : `/inventory/${activeDeal.vehicleId}`}>
                   <Button variant="outline" className="rounded-full h-14 px-8 border-2 font-black uppercase tracking-widest hover:bg-primary/5 transition-all">
                     View Details
                   </Button>
@@ -107,12 +112,12 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-                <Link href="/inventory">
+                <Link href={tenant ? `/${tenant.slug}/inventory` : "/inventory"}>
                   <Button className="rounded-full h-12 px-8 font-black uppercase tracking-widest shadow-lg">
                     Browse Inventory
                   </Button>
                 </Link>
-                <Link href="/request-vehicle">
+                <Link href={tenant ? `/${tenant.slug}/request-vehicle` : "/request-vehicle"}>
                   <Button variant="outline" className="rounded-full h-12 px-8 border-2 font-black uppercase tracking-widest">
                     Request Vehicle
                   </Button>
@@ -155,7 +160,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                           {INQUIRY_STATUS_LABELS[inquiry.inquiryStatus]}
                         </Badge>
                       </div>
-                      <Link href={`/inventory/${inquiry.vehicleId}`}>
+                      <Link href={tenant ? `/${tenant.slug}/inventory/${inquiry.vehicleId}` : `/inventory/${inquiry.vehicleId}`}>
                         <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-primary/5 hover:text-primary transition-colors">
                           <ArrowRight className="h-4 w-4" />
                         </Button>
@@ -237,7 +242,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                   Email Support
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
-                <Link href="/inventory" className="block">
+                <Link href={tenant ? `/${tenant.slug}/inventory` : "/inventory"} className="block">
                   <Button variant="outline" className="w-full rounded-full h-14 font-black uppercase tracking-widest border-2 hover:bg-primary/5 transition-all">
                     Browse More Cars
                   </Button>

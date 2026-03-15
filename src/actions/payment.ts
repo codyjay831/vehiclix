@@ -2,8 +2,9 @@
 
 import { db } from "@/lib/db";
 import { stripe } from "@/lib/stripe";
-import { VehicleStatus, DealStatus, PaymentStatus, Role, Prisma } from "@prisma/client";
+import { VehicleStatus, DealStatus, PaymentStatus, Role, Prisma, LeadSource } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { ensureLeadForInbound } from "@/lib/crm";
 
 const FIXED_DEPOSIT_AMOUNT = 1000.00; // USD
 
@@ -17,6 +18,7 @@ export type ReservationResult = {
 
 interface InitiateReservationData {
   vehicleId: string;
+  organizationId: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -26,7 +28,7 @@ interface InitiateReservationData {
 
 /**
  * Initiates a vehicle reservation by:
- * 1. Verifying vehicle is LISTED
+ * 1. Verifying vehicle is LISTED and belongs to the provided organization
  * 2. Creating/finding a stub User
  * 3. Creating a Deal (DEPOSIT_PENDING)
  * 4. Creating a DealDeposit (PENDING)
@@ -34,18 +36,22 @@ interface InitiateReservationData {
  * 6. Returning the client secret and dealId
  */
 export async function initiateVehicleReservationAction(data: InitiateReservationData): Promise<ReservationResult> {
-  const { vehicleId, firstName, lastName, email, phone, message } = data;
+  const { vehicleId, organizationId, firstName, lastName, email, phone, message } = data;
+
+  if (!organizationId) {
+    return { success: false, error: "SERVER_ERROR", message: "Organization context is required." };
+  }
 
   try {
     // 1. Transactional check and creation
     const result = await db.$transaction(async (tx) => {
-      // 1.1 Verify vehicle is LISTED and get organization
-      const vehicle = await tx.vehicle.findUnique({
-        where: { id: vehicleId },
+      // 1.1 Verify vehicle is LISTED and belongs to the provided organization
+      const vehicle = await tx.vehicle.findFirst({
+        where: { id: vehicleId, organizationId, vehicleStatus: VehicleStatus.LISTED },
         select: { id: true, vehicleStatus: true, price: true, organizationId: true },
       });
 
-      if (!vehicle || vehicle.vehicleStatus !== VehicleStatus.LISTED || !vehicle.organizationId) {
+      if (!vehicle) {
         return { error: "VEHICLE_UNAVAILABLE" as const };
       }
 
@@ -123,7 +129,19 @@ export async function initiateVehicleReservationAction(data: InitiateReservation
       },
     });
 
-    // 4. Log audit event
+    // 4. Feed the CRM Lead Pipeline (High Priority)
+    await ensureLeadForInbound({
+      organizationId: result.deal.organizationId,
+      source: LeadSource.RESERVATION,
+      customerEmail: email.toLowerCase(),
+      customerName: `${firstName} ${lastName}`,
+      customerPhone: phone,
+      vehicleId,
+      customerId: result.user.id,
+      initialActivityBody: `Vehicle reservation initiated. Deposit of $${FIXED_DEPOSIT_AMOUNT.toLocaleString()} pending via Stripe.`,
+    });
+
+    // 5. Log audit event
     await db.activityEvent.create({
       data: {
         eventType: "deposit.initiated",

@@ -70,7 +70,7 @@ export default async function AdminVehicleDetailPage({ params }: AdminVehiclePag
             </Link>
           </Button>
           <Button asChild className="w-full font-bold flex-1 md:flex-none">
-            <a href={`/inventory/${vehicle.id}?org=${vehicle.organization.slug}`} target="_blank">
+            <a href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`} target="_blank">
               <Eye className="mr-2 h-4 w-4" />
               Public View
             </a>

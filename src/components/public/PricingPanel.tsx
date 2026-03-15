@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import Link from "next/link";
 import { Vehicle } from "@/types";
@@ -5,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ShieldCheck, ArrowRight, MessageSquare } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { InquiryModal } from "./InquiryModal";
+import { useTenant } from "@/components/providers/TenantProvider";
 
 interface PricingPanelProps {
   vehicle: Vehicle;
@@ -12,6 +15,7 @@ interface PricingPanelProps {
 
 export function PricingPanel({ vehicle }: PricingPanelProps) {
   const [isInquiryOpen, setIsInquiryOpen] = React.useState(false);
+  const tenant = useTenant();
 
   const formattedPrice = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -46,7 +50,7 @@ export function PricingPanel({ vehicle }: PricingPanelProps) {
         </div>
 
         <div className="space-y-3">
-          <Link href={`/inventory/${vehicle.id}/reserve`} className="w-full">
+          <Link href={tenant ? `/${tenant.slug}/inventory/${vehicle.id}/reserve` : `/inventory/${vehicle.id}/reserve`} className="w-full">
             <Button size="lg" className="w-full h-14 rounded-full text-lg font-black shadow-lg hover:shadow-primary/20 transition-all group">
               Reserve Now
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
