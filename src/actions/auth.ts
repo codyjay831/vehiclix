@@ -238,6 +238,8 @@ export async function getOrganizationInfoAction(id: string) {
   return org;
 }
 
+import { hashToken } from "@/lib/crypto";
+
 /**
  * Claim an owner account using an invite token.
  */
@@ -252,43 +254,57 @@ export async function claimOwnerAccountAction(formData: FormData) {
     return { error: "Required fields are missing." };
   }
 
-  const invite = await db.ownerInvite.findUnique({
-    where: { token, status: "PENDING" }
-  });
+  const tokenHash = hashToken(token);
 
-  if (!invite) {
-    return { error: "Invalid or already used invite token." };
-  }
+  const result = await db.$transaction(async (tx) => {
+    // 1. Find and validate invite
+    const invite = await tx.ownerInvite.findUnique({
+      where: { tokenHash, status: "PENDING" }
+    });
 
-  if (invite.expiresAt < new Date()) {
-    return { error: "Invite token has expired." };
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  // We finalize the OWNER user here (Pattern B)
-  const user = await db.user.create({
-    data: {
-      firstName,
-      lastName,
-      email: invite.email,
-      phone,
-      passwordHash,
-      role: Role.OWNER,
-      organizationId: invite.organizationId,
-      isStub: false,
-    },
-  });
-
-  // Update invite status
-  await db.ownerInvite.update({
-    where: { id: invite.id },
-    data: { 
-      status: "ACCEPTED",
-      acceptedAt: new Date()
+    if (!invite) {
+      throw new Error("Invalid or already used invite token.");
     }
+
+    if (invite.expiresAt < new Date()) {
+      throw new Error("Invite token has expired.");
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // 2. Create the OWNER user
+    const user = await tx.user.create({
+      data: {
+        firstName,
+        lastName,
+        email: invite.email,
+        phone,
+        passwordHash,
+        role: Role.OWNER,
+        organizationId: invite.organizationId,
+        isStub: false,
+      },
+    });
+
+    // 3. Mark invite as accepted
+    await tx.ownerInvite.update({
+      where: { id: invite.id },
+      data: { 
+        status: "ACCEPTED",
+        acceptedAt: new Date()
+      }
+    });
+
+    return user;
+  }).catch((err) => {
+    return { error: err.message || "Failed to claim account." };
   });
 
+  if ("error" in result) {
+    return result;
+  }
+
+  const user = result;
   await setSessionCookie(user);
 
   await logAuditEvent({

@@ -65,17 +65,14 @@ export default async function BetaRequestsPage() {
                         {getStatusBadge(request.status)}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {request.status === "PENDING" && (
-                          <BetaActions requestId={request.id} />
-                        )}
+                        <BetaActions 
+                          requestId={request.id} 
+                          organizationId={request.organizationId} 
+                          status={request.status} 
+                        />
                         {request.status === "REJECTED" && (
                           <div className="text-[10px] font-black uppercase text-red-600/60 max-w-[200px] truncate ml-auto italic" title={request.rejectionReason || ""}>
                             {request.rejectionReason}
-                          </div>
-                        )}
-                        {request.status === "APPROVED" && request.organizationId && (
-                          <div className="text-[10px] font-black uppercase text-green-600/60 ml-auto italic">
-                            Linked to Org
                           </div>
                         )}
                       </td>

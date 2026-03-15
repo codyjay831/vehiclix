@@ -45,6 +45,9 @@ export async function submitBetaRequestAction(formData: FormData) {
   return { success: true };
 }
 
+import { hashToken } from "@/lib/crypto";
+import { sendInviteEmail } from "@/lib/mail";
+
 /**
  * Super Admin action to approve a beta request.
  * provisions organization and creates an invite token.
@@ -65,10 +68,7 @@ export async function approveBetaRequestAction(requestId: string, slugOverride?:
 
   // Transactional provision
   const result = await db.$transaction(async (tx) => {
-    // 1. Provision organization (Note: we're using the base logic but wrapping it)
-    // We can't directly use createOrganizationAction because it revalidates/audits outside the TX.
-    // Instead, we implement the core logic here.
-    
+    // 1. Provision organization
     const slug = slugOverride || request.dealershipName.toLowerCase().replace(/[^a-z0-9]/g, '-');
     
     // Check slug uniqueness within transaction
@@ -83,16 +83,18 @@ export async function approveBetaRequestAction(requestId: string, slugOverride?:
     });
 
     // 2. Create Invite Token
-    const inviteToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+    const rawToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+    const tokenHash = hashToken(rawToken);
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
 
-    const invite = await tx.ownerInvite.create({
+    await tx.ownerInvite.create({
       data: {
-        token: inviteToken,
+        tokenHash,
         email: request.email,
         organizationId: org.id,
         expiresAt,
-        status: InviteStatus.PENDING
+        status: InviteStatus.PENDING,
+        lastSentAt: new Date(),
       }
     });
 
@@ -107,11 +109,101 @@ export async function approveBetaRequestAction(requestId: string, slugOverride?:
       }
     });
 
-    return { org, inviteToken };
+    return { org, rawToken };
+  });
+
+  // 4. Send Email (Outside transaction for reliability/latency)
+  const baseUrl = process.env.APP_URL || "https://vehiclix.app";
+  const inviteUrl = `${baseUrl}/setup-owner/${result.rawToken}`;
+  
+  await sendInviteEmail({
+    email: request.email,
+    dealershipName: request.dealershipName,
+    inviteUrl,
   });
 
   revalidatePath("/super-admin/requests");
-  return { success: true, inviteToken: result.inviteToken };
+  return { success: true, inviteToken: result.rawToken };
+}
+
+/**
+ * Super Admin action to resend an existing invite.
+ */
+export async function resendInviteAction(organizationId: string) {
+  const user = await getAuthenticatedUser();
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized.");
+  }
+
+  const invite = await db.ownerInvite.findFirst({
+    where: { organizationId, status: InviteStatus.PENDING },
+    include: { organization: true }
+  });
+
+  if (!invite || invite.expiresAt < new Date()) {
+    throw new Error("No valid pending invite found. Please regenerate.");
+  }
+
+  // Note: Since we only store tokenHash, we can't "resend" the exact same raw token 
+  // unless we pass it around or store it temporarily. 
+  // SECURITY REQUIREMENT: "Harden invite tokens at rest".
+  // DECISION: Resending a hashed token is impossible. "Resend" must regenerate a NEW token.
+  // I'll update the logic to regenerate on resend, or rename this to "Regenerate & Send".
+  // Actually, the prompt says: "resend existing still-valid invite" OR "regenerate".
+  // If I hash at rest, I MUST regenerate to resend.
+  
+  return regenerateInviteAction(organizationId);
+}
+
+/**
+ * Super Admin action to regenerate an invite.
+ */
+export async function regenerateInviteAction(organizationId: string) {
+  const user = await getAuthenticatedUser();
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized.");
+  }
+
+  const org = await db.organization.findUnique({
+    where: { id: organizationId }
+  });
+
+  if (!org) throw new Error("Organization not found.");
+
+  // 1. Revoke old pending invites
+  await db.ownerInvite.updateMany({
+    where: { organizationId, status: InviteStatus.PENDING },
+    data: { status: InviteStatus.REVOKED }
+  });
+
+  // 2. Create new token
+  const rawToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+
+  const invite = await db.ownerInvite.create({
+    data: {
+      tokenHash,
+      email: (await db.user.findFirst({ where: { organizationId, role: Role.OWNER } }))?.email || (await db.betaAccessRequest.findFirst({ where: { organizationId } }))?.email || "",
+      organizationId,
+      expiresAt,
+      status: InviteStatus.PENDING,
+      lastSentAt: new Date(),
+    }
+  });
+
+  // 3. Send Email
+  const baseUrl = process.env.APP_URL || "https://vehiclix.app";
+  const inviteUrl = `${baseUrl}/setup-owner/${rawToken}`;
+  
+  await sendInviteEmail({
+    email: invite.email,
+    dealershipName: org.name,
+    inviteUrl,
+  });
+
+  revalidatePath("/super-admin/requests");
+  return { success: true, inviteToken: rawToken };
 }
 
 /**
