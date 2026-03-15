@@ -2,6 +2,7 @@ import * as React from "react";
 import { redirect } from "next/navigation";
 import { resolvePortalIdentity, getActiveDeal } from "@/lib/portal";
 import { ensureDocumentPlaceholders } from "@/lib/document";
+import { db } from "@/lib/db";
 import { DocumentUploadZone } from "@/components/portal/DocumentUploadZone";
 import { FileText, ChevronLeft, ShieldCheck } from "lucide-react";
 import Link from "next/link";

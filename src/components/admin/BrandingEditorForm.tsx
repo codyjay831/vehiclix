@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Globe, Phone, Mail, MapPin, Image as ImageIcon } from "lucide-react";
+import { Loader2, Save, Globe, Phone, Mail, MapPin, Image as ImageIcon, FileText } from "lucide-react";
 
 interface BrandingEditorFormProps {
   initialData: OrganizationBranding | null;

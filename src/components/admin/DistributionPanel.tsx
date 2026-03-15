@@ -30,7 +30,7 @@ export function DistributionPanel({ vehicle }: DistributionPanelProps) {
   const copyListingLink = async () => {
     const url = `${window.location.origin}/${vehicle.organization.slug}/inventory/${vehicle.id}`;
     await navigator.clipboard.writeText(url);
-    await trackVehicleShareAction(vehicle.id);
+    await trackVehicleShareAction(vehicle.id, vehicle.organizationId);
     setCopiedLink(true);
     toast.success("Link copied");
     setTimeout(() => setCopiedLink(false), 2000);
@@ -40,7 +40,7 @@ export function DistributionPanel({ vehicle }: DistributionPanelProps) {
     const url = `${window.location.origin}/${vehicle.organization.slug}/inventory/${vehicle.id}`;
     const text = `Check out this ${vehicle.year} ${vehicle.make} ${vehicle.model}: ${url}`;
     window.open(`sms:?body=${encodeURIComponent(text)}`);
-    await trackVehicleShareAction(vehicle.id);
+    await trackVehicleShareAction(vehicle.id, vehicle.organizationId);
   };
 
   return (

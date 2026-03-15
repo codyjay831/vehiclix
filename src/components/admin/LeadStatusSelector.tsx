@@ -32,7 +32,8 @@ export function LeadStatusSelector({ leadId, currentStatus }: LeadStatusSelector
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<LeadStatus>(currentStatus);
 
-  const handleStatusChange = (newStatus: LeadStatus) => {
+  const handleStatusChange = (newStatus: LeadStatus | null) => {
+    if (!newStatus) return;
     setStatus(newStatus);
     startTransition(async () => {
       try {

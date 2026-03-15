@@ -111,7 +111,7 @@ ${vehicle.organization.name}`,
       await navigator.clipboard.writeText(content.body);
       toast.success("Copied to clipboard");
       if (vehicle) {
-        await trackVehicleShareAction(vehicle.id);
+        await trackVehicleShareAction(vehicle.id, vehicle.organizationId);
       }
     } catch (err) {
       toast.error("Failed to copy");

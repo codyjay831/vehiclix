@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
       case "invoice.paid":
       case "invoice.payment_failed": {
-        const invoice = event.data.object as Stripe.Invoice;
+        const invoice = event.data.object as any;
         if (invoice.subscription) {
           const subscriptionId = invoice.subscription as string;
           console.log(`📄 Syncing subscription from invoice: ${subscriptionId}`);

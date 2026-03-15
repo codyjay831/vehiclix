@@ -41,7 +41,7 @@ export async function syncSubscription(
   stripeSubscriptionId: string,
   organizationId?: string
 ) {
-  const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+  const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId) as any;
   const stripeCustomerId = subscription.customer as string;
   const stripePriceId = subscription.items.data[0].price.id;
 

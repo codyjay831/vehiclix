@@ -4,7 +4,7 @@ import { decrypt } from "@/lib/session";
 import { isPlatformHost } from "@/lib/domain-shared";
 import { BRANDING } from "@/config/branding";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
 

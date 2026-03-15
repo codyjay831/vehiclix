@@ -17,7 +17,27 @@ export type AuditEventType =
   | "vehicle.created"
   | "vehicle.updated"
   | "vehicle.status_changed"
-  | "vehicle.published";
+  | "vehicle.published"
+  | "domain.add"
+  | "domain.delete"
+  | "domain.verify_success"
+  | "domain.set_primary"
+  | "organization.update_homepage"
+  | "organization.create"
+  | "organization.update_slug"
+  | "organization.update_branding"
+  | "system.test"
+  | "inquiry.submitted"
+  | "deal.cancelled"
+  | "deal.contracts_sent"
+  | "deal.contracts_signed"
+  | "deposit.initiated"
+  | "deposit.completed"
+  | "request.submitted"
+  | "lead.notification_sent"
+  | "document.uploaded"
+  | "document.verified"
+  | "document.rejected";
 
 interface AuditLogOptions {
   eventType: AuditEventType;

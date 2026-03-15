@@ -22,7 +22,8 @@ export function LeadAssigneeSelector({ leadId, currentAssigneeId, assignableUser
   const [isPending, startTransition] = useTransition();
   const [assigneeId, setAssigneeId] = useState<string>(currentAssigneeId || "unassigned");
 
-  const handleAssigneeChange = (val: string) => {
+  const handleAssigneeChange = (val: string | null) => {
+    if (!val) return;
     const finalId = val === "unassigned" ? null : val;
     setAssigneeId(val);
     startTransition(async () => {

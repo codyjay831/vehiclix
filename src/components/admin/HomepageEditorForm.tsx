@@ -21,8 +21,9 @@ import {
   Star, 
   FileText, 
   Phone,
-  Trash2,
-  Plus
+  Trash2, 
+  Plus,
+  Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -214,7 +215,7 @@ export function HomepageEditorForm({ initialData }: HomepageEditorFormProps) {
             </div>
             <div className="grid gap-2">
               <Label>CTA Destination</Label>
-              <Select value={ctaRoute} onValueChange={setCtaRoute}>
+              <Select value={ctaRoute} onValueChange={(val) => setCtaRoute(val || "inventory")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select destination" />
                 </SelectTrigger>
@@ -259,7 +260,7 @@ export function HomepageEditorForm({ initialData }: HomepageEditorFormProps) {
                       <Label className="text-[10px] uppercase font-bold text-muted-foreground">Icon</Label>
                       <Select 
                         value={highlight.icon} 
-                        onValueChange={(val) => updateHighlight(index, "icon", val)}
+                        onValueChange={(val) => updateHighlight(index, "icon", val || "ShieldCheck")}
                       >
                         <SelectTrigger className="h-9">
                           <SelectValue />

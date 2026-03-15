@@ -26,14 +26,14 @@ export const PLAN_FEATURES = {
 /**
  * Determines if a feature is available for a given subscription.
  */
-export function hasFeature(subscription: OrganizationSubscription | null, feature: keyof typeof PLAN_FEATURES[PlanKey.STARTER]): boolean {
+export function hasFeature(subscription: OrganizationSubscription | null, feature: keyof typeof PLAN_FEATURES["STARTER"]): boolean {
   if (!subscription) return false;
   
   // Subscription must be in a "good" state to use premium features
-  const isValidState = [
+  const isValidState = ([
     SubscriptionStatus.ACTIVE,
     SubscriptionStatus.TRIALING
-  ].includes(subscription.status);
+  ] as SubscriptionStatus[]).includes(subscription.status);
 
   if (!isValidState) return false;
 

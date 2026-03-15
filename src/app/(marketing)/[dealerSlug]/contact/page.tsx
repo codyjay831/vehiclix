@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { getOrganizationBySlug, getCanonicalUrl } from "@/lib/organization";
 import { notFound } from "next/navigation";
+import { BRANDING } from "@/config/branding";
 
 interface ContactPageProps {
   params: Promise<{ dealerSlug: string }>;

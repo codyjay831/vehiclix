@@ -58,7 +58,7 @@ export async function updateHomepageAction(rawData: unknown) {
   if (!validation.success) {
     return { 
       success: false, 
-      error: "Validation failed: " + validation.error.errors.map(e => `${e.path.join(".")}: ${e.message}`).join(", ") 
+      error: "Validation failed: " + validation.error.issues.map(e => `${e.path.join(".")}: ${e.message}`).join(", ") 
     };
   }
   

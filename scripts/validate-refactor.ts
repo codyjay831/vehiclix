@@ -78,7 +78,7 @@ async function runTests() {
     } else {
       console.log("❌ registerAction FAILED to reject invalid organizationId:", result);
     }
-  } catch (e) {
+  } catch (e: any) {
     console.log("✅ registerAction threw error for invalid context (acceptable):", e.message);
   }
 
@@ -110,9 +110,9 @@ async function runTests() {
 
   try {
     await registerAction(formDataValid);
-  } catch (e) {
+  } catch (e: any) {
     // Catch cookie/redirect errors
-    if (!e.message.includes("cookies") && !e.digest?.includes("NEXT_REDIRECT")) {
+    if (!e.message?.includes("cookies") && !e.digest?.includes("NEXT_REDIRECT")) {
       console.error("❌ Unexpected registration error:", e);
     }
   }

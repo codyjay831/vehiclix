@@ -62,6 +62,7 @@ export default async function DealerLayout({
     id: organization.id,
     name: organization.name,
     slug: organization.slug,
+    phone: organization.phone,
     branding: organization.branding,
     homepage: organization.homepage,
   };

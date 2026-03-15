@@ -8,6 +8,7 @@ interface TenantContextType {
   id: string;
   name: string;
   slug: string;
+  phone?: string | null;
   branding?: OrganizationBranding | null;
   homepage?: OrganizationHomepage | null;
 }

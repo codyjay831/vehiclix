@@ -41,6 +41,7 @@ export default async function PortalLayout({
     id: organization.id,
     name: organization.name,
     slug: organization.slug,
+    phone: organization.phone,
     branding: organization.branding,
   } : null;
 

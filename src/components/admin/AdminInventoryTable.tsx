@@ -85,10 +85,10 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
     });
   };
 
-  const copyListingLink = async (vehicleId: string, orgSlug: string) => {
+  const copyListingLink = async (vehicleId: string, orgSlug: string, orgId: string) => {
     const url = `${window.location.origin}/${orgSlug}/inventory/${vehicleId}`;
     await navigator.clipboard.writeText(url);
-    await trackVehicleShareAction(vehicleId);
+    await trackVehicleShareAction(vehicleId, orgId);
     setCopiedId(vehicleId);
     toast.success("Link copied");
     setTimeout(() => setCopiedId(null), 2000);
@@ -217,7 +217,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => copyListingLink(vehicle.id, vehicle.organization.slug)}>
+                          <DropdownMenuItem onClick={() => copyListingLink(vehicle.id, vehicle.organization.slug, vehicle.organization.id)}>
                             <Copy className="mr-2 h-4 w-4" />
                             Copy Link
                           </DropdownMenuItem>
