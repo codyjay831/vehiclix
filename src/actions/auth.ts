@@ -20,62 +20,101 @@ const SESSION_COOKIE_NAME = "evo_session";
  * Sets the session cookie based on user role.
  */
 async function setSessionCookie(user: { id: string; role: Role; email: string; organizationId?: string | null }, isTwoFactorVerified = true) {
+  console.log("SESSION: setSessionCookie called", { userId: user.id, isTwoFactorVerified });
   const expiresAt = new Date(
     Date.now() + (user.role === Role.OWNER ? 8 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
   );
 
-  const session = await encrypt({
-    userId: user.id,
-    role: user.role,
-    email: user.email,
-    organizationId: user.organizationId,
-    expiresAt,
-    isTwoFactorVerified,
-  });
+  console.log("SESSION: encrypting payload", { expiresAt: expiresAt.toISOString() });
+  try {
+    const session = await encrypt({
+      userId: user.id,
+      role: user.role,
+      email: user.email,
+      organizationId: user.organizationId,
+      expiresAt,
+      isTwoFactorVerified,
+    });
+    console.log("SESSION: encryption successful");
 
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, session, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    expires: expiresAt,
-    path: "/",
-  });
+    const cookieStore = await cookies();
+    console.log("SESSION: setting cookie", SESSION_COOKIE_NAME);
+    cookieStore.set(SESSION_COOKIE_NAME, session, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: expiresAt,
+      path: "/",
+    });
+    console.log("SESSION: cookie set successful");
+  } catch (error) {
+    console.error("SESSION: error setting session cookie", error);
+    throw error;
+  }
 }
 
 /**
  * Login action for both customers and owners.
  */
 export async function loginAction(formData: FormData) {
+  console.log("ENV CHECK", {
+    DATABASE_URL: !!process.env.DATABASE_URL,
+    AUTH_SECRET: !!process.env.AUTH_SECRET,
+    TWO_FACTOR_ENCRYPTION_KEY: !!process.env.TWO_FACTOR_ENCRYPTION_KEY,
+    APP_URL: !!process.env.APP_URL,
+    NEXT_PUBLIC_PLATFORM_DOMAIN: !!process.env.NEXT_PUBLIC_PLATFORM_DOMAIN,
+  });
+
+  console.log("LOGIN STEP: request received");
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
 
   if (!email || !password) {
+    console.log("LOGIN STEP: missing email/password");
     return { error: "Email and password are required" };
   }
 
+  try {
+    console.log("LOGIN STEP: verifying database connectivity");
+    await db.$queryRaw`SELECT 1`;
+    console.log("LOGIN STEP: database connectivity confirmed");
+  } catch (error) {
+    console.error("LOGIN STEP: database connectivity failed", error);
+    return { error: "Database connection failed" };
+  }
+
+  console.log("LOGIN STEP: searching for user", email);
   const user = await db.user.findUnique({
     where: { email },
   });
 
   if (!user || !user.passwordHash) {
+    console.log("LOGIN STEP: user not found or passwordHash missing");
     return { error: "Invalid credentials" };
   }
+  console.log("LOGIN STEP: user found", user.id);
 
+  console.log("LOGIN STEP: verifying password");
   const isValid = await bcrypt.compare(password, user.passwordHash);
   if (!isValid) {
+    console.log("LOGIN STEP: invalid password");
     return { error: "Invalid credentials" };
   }
+  console.log("LOGIN STEP: password verified");
 
   // Handle Owner 2FA
   if (user.role === Role.OWNER && user.twoFactorEnabled) {
+    console.log("LOGIN STEP: handling 2FA for owner");
     if (!user.twoFactorSecret) {
+      console.error("LOGIN STEP: 2FA secret missing");
       throw new Error("Configuration error: Owner 2FA enabled but secret is missing.");
     }
 
     // Set a "partial" session where isTwoFactorVerified is false
+    console.log("LOGIN STEP: creating partial 2FA session");
     await setSessionCookie(user, false);
 
+    console.log("LOGIN STEP: logging audit event (2fa_prompted)");
     await logAuditEvent({
       eventType: "auth.2fa_prompted",
       actorId: user.id,
@@ -89,11 +128,15 @@ export async function loginAction(formData: FormData) {
     const baseUrl = process.env.APP_URL || "https://vehiclix.app";
     const verifyUrl = new URL("/login/verify-2fa", baseUrl);
     if (from) verifyUrl.searchParams.set("from", from);
+    console.log("LOGIN STEP: redirecting to 2FA", verifyUrl.toString());
     redirect(`${verifyUrl.pathname}${verifyUrl.search}`);
   }
 
+  console.log("LOGIN STEP: creating session");
   await setSessionCookie(user);
+  console.log("LOGIN STEP: session created");
 
+  console.log("LOGIN STEP: logging audit event (login)");
   await logAuditEvent({
     eventType: "auth.login",
     actorId: user.id,
@@ -113,6 +156,7 @@ export async function loginAction(formData: FormData) {
       ? "/admin" 
       : "/portal";
 
+  console.log("LOGIN STEP: redirecting to", from || defaultRedirect);
   redirect(from || defaultRedirect);
 }
 

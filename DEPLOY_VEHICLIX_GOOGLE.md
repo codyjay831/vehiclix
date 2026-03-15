@@ -16,7 +16,17 @@ This document provides instructions for deploying the Vehiclix platform to Googl
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Public | Your production Stripe publishable key. | **YES** |
 | `TWO_FACTOR_ENCRYPTION_KEY` | Secret | Hex key for encrypting 2FA secrets. | **YES** |
 | `ALLOW_MOCK_AUTH` | Secret | **MUST be "false" in production.** | **YES** |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Secret | Stable key for encrypting Server Action IDs. | **YES** |
+| `NEXT_DEPLOYMENT_ID` | Public | Unique ID for the current build (e.g., Git commit hash). | **YES** |
 | `DOCUSIGN_WEBHOOK_SECRET` | Secret | Signing secret for DocuSign webhooks. | Optional |
+
+---
+
+### Special Note on Server Actions Stability
+Next.js Server Actions require a stable encryption key in production to prevent "Action not found" errors after redeploys.
+1. Generate a key: `openssl rand -base64 32`
+2. Set it as `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` in Firebase App Hosting.
+3. Use a unique `NEXT_DEPLOYMENT_ID` for each build (e.g., your Git commit hash) to manage client-side cache skew.
 
 ---
 
