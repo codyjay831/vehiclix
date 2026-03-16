@@ -25,6 +25,7 @@ export function isPlatformHost(host: string): boolean {
   return (
     normalized === platformDomain ||
     normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
     normalized.endsWith(`.${platformDomain}`)
   );
 }

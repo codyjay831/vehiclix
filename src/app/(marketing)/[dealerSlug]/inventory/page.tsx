@@ -1,4 +1,5 @@
 import { getPublicInventory, getPublicMakes } from "@/lib/inventory";
+import { serializeDecimal } from "@/lib/serializers";
 import { InventoryGrid } from "@/components/public/InventoryGrid";
 import { InventoryFilters } from "@/components/public/InventoryFilters";
 import { Metadata } from "next";
@@ -62,6 +63,8 @@ export default async function InventoryPage({ params, searchParams }: InventoryP
     getPublicMakes(org.id),
   ]);
 
+  const serializedVehicles = serializeDecimal(vehicles);
+
   const hasFilters = Object.values(filtersParams).some(Boolean);
 
   const nameParts = org.name.split(' ');
@@ -83,7 +86,7 @@ export default async function InventoryPage({ params, searchParams }: InventoryP
       <InventoryFilters makes={makes} />
       
       <InventoryGrid 
-        vehicles={vehicles} 
+        vehicles={serializedVehicles} 
         totalCount={vehicles.length} 
         hasFilters={hasFilters}
       />

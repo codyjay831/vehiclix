@@ -4,13 +4,13 @@ import { decrypt } from "@/lib/session";
 import { isPlatformHost } from "@/lib/domain-shared";
 import { BRANDING } from "@/config/branding";
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
 
   // 1. Custom Domain Mapping & Routing
   // If this is NOT a platform host (e.g., luxevs.com instead of vehiclix.app)
-  if (!isPlatformHost(host) && !pathname.startsWith("/api") && !pathname.startsWith("/_next")) {
+  if (!isPlatformHost(host) && !pathname.startsWith("/api") && !pathname.startsWith("/_next") && !pathname.startsWith("/static")) {
     // A. System Route Protection on Custom Domains
     // Redirect /admin, /portal, /login to platform domain for security and consistency
     if (
@@ -19,11 +19,19 @@ export async function proxy(request: NextRequest) {
       pathname === "/login" || 
       pathname === "/register" // platform registration vs dealer registration is a choice, keeping platform for now
     ) {
-      const platformUrl = new URL(pathname, `https://${BRANDING.platformDomain}`);
-      request.nextUrl.searchParams.forEach((value, key) => {
-        platformUrl.searchParams.set(key, value);
-      });
-      return NextResponse.redirect(platformUrl);
+      // Don't redirect if we're already on the platform domain but isPlatformHost failed
+      const normalizedHost = host.split(":")[0].toLowerCase();
+      const platformDomain = BRANDING.platformDomain.toLowerCase();
+      
+      if (normalizedHost === platformDomain || normalizedHost.endsWith("." + platformDomain)) {
+        // Redundant redirect avoided
+      } else {
+        const platformUrl = new URL(pathname, `https://${BRANDING.platformDomain}`);
+        request.nextUrl.searchParams.forEach((value, key) => {
+          platformUrl.searchParams.set(key, value);
+        });
+        return NextResponse.redirect(platformUrl);
+      }
     }
 
     // B. Resolve Domain to Slug
@@ -167,7 +175,8 @@ export async function proxy(request: NextRequest) {
     }
     
     if (session?.isTwoFactorVerified) {
-      return NextResponse.redirect(new URL("/admin", request.url));
+      const from = request.nextUrl.searchParams.get("from") || "/admin";
+      return NextResponse.redirect(new URL(from, request.url));
     }
   }
 

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { ContactMethod, Vehicle } from "@/types";
+import { ContactMethod, SerializedVehicle } from "@/types";
 import { 
   Dialog, 
   DialogContent, 
@@ -46,7 +46,7 @@ const inquirySchema = z.object({
 type InquiryFormValues = z.infer<typeof inquirySchema>;
 
 interface InquiryModalProps {
-  vehicle: Vehicle;
+  vehicle: SerializedVehicle;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

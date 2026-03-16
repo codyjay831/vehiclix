@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { VehicleWithMedia } from "@/types";
+import { SerializedVehicleWithMedia } from "@/types";
 import { InventoryCard } from "./InventoryCard";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
@@ -9,7 +9,7 @@ import { useTenant } from "@/components/providers/TenantProvider";
 import { getSafeHomepage } from "@/lib/homepage";
 
 interface FeaturedInventoryProps {
-  vehicles: VehicleWithMedia[];
+  vehicles: SerializedVehicleWithMedia[];
 }
 
 export function FeaturedInventory({ vehicles }: FeaturedInventoryProps) {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users, ShieldAlert } from "lucide-react";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/actions/auth";
 import { stopSupportSession } from "@/actions/support";
@@ -26,9 +27,9 @@ export default async function AdminLayout({
 }) {
   const user = await getAuthenticatedUser();
 
-  const isSupportMode = user?.role === "SUPER_ADMIN" && user.isSupportMode;
+  const isSupportMode = user?.role === Role.SUPER_ADMIN && user.isSupportMode;
 
-  if (!user || (user.role !== "OWNER" && !isSupportMode)) {
+  if (!user || (user.role !== Role.OWNER && !isSupportMode)) {
     redirect("/login");
   }
 

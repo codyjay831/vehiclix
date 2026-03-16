@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Vehicle } from "@/types";
+import { SerializedVehicle } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Zap } from "lucide-react";
 
 interface VdpContentProps {
-  vehicle: Vehicle;
+  vehicle: SerializedVehicle;
 }
 
 export function VdpContent({ vehicle }: VdpContentProps) {

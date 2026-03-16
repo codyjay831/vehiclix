@@ -3,6 +3,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicVehicleDetail } from "@/lib/inventory";
+import { serializeDecimal } from "@/lib/serializers";
 import { getOrganizationBySlug, getCanonicalUrl } from "@/lib/organization";
 import { MediaGallery } from "@/components/public/MediaGallery";
 import { VehicleSpecs } from "@/components/public/VehicleSpecs";
@@ -101,6 +102,8 @@ export default async function VdpPage({ params }: VdpPageProps) {
   // Track the view with validated organizationId
   await trackVehicleViewAction(vehicle.id, org.id);
 
+  const serializedVehicle = serializeDecimal(vehicle);
+
   return (
     <div className="min-h-screen pt-24 pb-20 px-6 lg:px-8 max-w-7xl mx-auto space-y-12">
       {/* Navigation & Header */}
@@ -130,13 +133,13 @@ export default async function VdpPage({ params }: VdpPageProps) {
         {/* Left Column (60%) */}
         <div className="lg:col-span-8 space-y-12 animate-in slide-in-from-left-4 duration-500">
           <MediaGallery media={vehicle.media} />
-          <VehicleSpecs vehicle={vehicle} />
-          <VdpContent vehicle={vehicle} />
+          <VehicleSpecs vehicle={serializedVehicle} />
+          <VdpContent vehicle={serializedVehicle} />
         </div>
 
         {/* Right Column (40%) */}
         <div className="lg:col-span-4 lg:sticky lg:top-24 animate-in slide-in-from-right-4 duration-500">
-          <PricingPanel vehicle={vehicle} />
+          <PricingPanel vehicle={serializedVehicle} />
         </div>
       </div>
     </div>

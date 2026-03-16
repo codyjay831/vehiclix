@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Vehicle } from "@/types";
+import { SerializedVehicle } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, ArrowRight, MessageSquare } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { InquiryModal } from "./InquiryModal";
 import { useTenant } from "@/components/providers/TenantProvider";
 
 interface PricingPanelProps {
-  vehicle: Vehicle;
+  vehicle: SerializedVehicle;
 }
 
 export function PricingPanel({ vehicle }: PricingPanelProps) {

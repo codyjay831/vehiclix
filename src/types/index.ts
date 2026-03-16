@@ -66,5 +66,23 @@ export type EnergyRequestWithHistory = Prisma.EnergyServiceRequestGetPayload<{
   include: { statusHistory: true };
 }>;
 
+/**
+ * Serialized vehicle type (Decimal -> string, Date -> string)
+ */
+export type SerializedVehicle<T = Prisma.VehicleGetPayload<{}>> = {
+  [K in keyof T]: T[K] extends Prisma.Decimal 
+    ? string 
+    : T[K] extends Date 
+      ? string 
+      : T[K] extends object 
+        ? SerializedVehicle<T[K]> 
+        : T[K];
+};
+
+/**
+ * Serialized version of VehicleWithMedia
+ */
+export type SerializedVehicleWithMedia = SerializedVehicle<VehicleWithMedia>;
+
 // 3. Re-export all label maps and enum helpers
 export * from "./enums";

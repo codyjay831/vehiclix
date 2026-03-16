@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { VehicleWithMedia, DRIVETRAIN_LABELS } from "@/types";
+import { SerializedVehicleWithMedia, DRIVETRAIN_LABELS } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { useTenant } from "@/components/providers/TenantProvider";
 
 interface InventoryCardProps {
-  vehicle: VehicleWithMedia;
+  vehicle: SerializedVehicleWithMedia;
 }
 
 export function InventoryCard({ vehicle }: InventoryCardProps) {

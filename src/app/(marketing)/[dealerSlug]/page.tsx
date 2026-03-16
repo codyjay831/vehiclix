@@ -1,4 +1,5 @@
 import { getFeaturedInventory } from "@/lib/inventory";
+import { serializeDecimal } from "@/lib/serializers";
 import { Hero } from "@/components/public/Hero";
 import { PromoBar } from "@/components/public/PromoBar";
 import { TrustHighlights } from "@/components/public/TrustHighlights";
@@ -57,6 +58,7 @@ export default async function DealerHomePage({ params }: DealerHomePageProps) {
   }
 
   const featuredVehicles = await getFeaturedInventory(org.id);
+  const serializedVehicles = serializeDecimal(featuredVehicles);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -64,7 +66,7 @@ export default async function DealerHomePage({ params }: DealerHomePageProps) {
         <PromoBar />
         <Hero />
         <TrustHighlights />
-        <FeaturedInventory vehicles={featuredVehicles} />
+        <FeaturedInventory vehicles={serializedVehicles} />
         <Testimonial />
         <AboutTeaser />
         <ContactCTA />

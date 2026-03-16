@@ -1,6 +1,6 @@
 "use client";
 
-import { VehicleWithMedia } from "@/types";
+import { SerializedVehicleWithMedia } from "@/types";
 import { InventoryCard } from "./InventoryCard";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -8,7 +8,7 @@ import { CarFront, ArrowRight } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
 
 interface InventoryGridProps {
-  vehicles: VehicleWithMedia[];
+  vehicles: SerializedVehicleWithMedia[];
   totalCount: number;
   hasFilters: boolean;
 }

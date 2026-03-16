@@ -82,15 +82,22 @@ export async function hasRole(role: Role) {
  */
 export async function requireUserWithOrg() {
   const user = await getAuthenticatedUser();
+  
   if (!user) {
     throw new Error("Authentication required");
   }
 
   // Support mode resolution for Super Admin
-  if (user.role === Role.SUPER_ADMIN && user.isSupportMode && user.supportOrgId) {
+  if (user.role === Role.SUPER_ADMIN && (user.isSupportMode || user.supportOrgId)) {
+    const effectiveOrgId = user.supportOrgId || user.organizationId;
+    
+    if (!effectiveOrgId) {
+      throw new Error("Organization context required for support mode");
+    }
+
     return {
       ...user,
-      organizationId: user.supportOrgId,
+      organizationId: effectiveOrgId,
       isSupportMode: true,
     } as User & { organizationId: string; isSupportMode: true };
   }

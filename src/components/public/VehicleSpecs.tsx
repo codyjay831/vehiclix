@@ -10,11 +10,11 @@ import {
   Calendar,
   Zap
 } from "lucide-react";
-import { Vehicle, DRIVETRAIN_LABELS, INVENTORY_CONDITION_LABELS, TITLE_STATUS_LABELS } from "@/types";
+import { SerializedVehicle, DRIVETRAIN_LABELS, INVENTORY_CONDITION_LABELS, TITLE_STATUS_LABELS } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface VehicleSpecsProps {
-  vehicle: Vehicle;
+  vehicle: SerializedVehicle;
 }
 
 export function VehicleSpecs({ vehicle }: VehicleSpecsProps) {
