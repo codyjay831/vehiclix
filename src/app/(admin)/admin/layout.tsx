@@ -29,6 +29,10 @@ export default async function AdminLayout({
 
   const isSupportMode = user?.role === Role.SUPER_ADMIN && user.isSupportMode;
 
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'admin/layout.tsx:guard',message:'layout auth',data:{hasUser:!!user,role:user?.role ?? null,organizationId:user?.organizationId ?? null,supportOrgId:user?.supportOrgId ?? null,isSupportMode:!!isSupportMode,willRedirectToLogin:!user || (user.role !== Role.OWNER && !isSupportMode)},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
+  // #endregion
+
   if (!user || (user.role !== Role.OWNER && !isSupportMode)) {
     redirect("/login");
   }

@@ -74,14 +74,16 @@ export default async function SuperAdminDashboardPage() {
                 metrics.recentOrgs.map((org) => (
                   <div key={org.id} className="p-6 flex items-center justify-between hover:bg-muted/5 transition-colors group">
                     <div>
-                      <div className="font-black uppercase tracking-tight italic text-sm group-hover:text-primary transition-colors">{org.name}</div>
+                      <Link href={`/super-admin/dealerships/${org.id}`} className="font-black uppercase tracking-tight italic text-sm group-hover:text-primary transition-colors">
+                        {org.name}
+                      </Link>
                       <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">slug: {org.slug}</div>
                     </div>
                     <div className="text-right flex items-center gap-4">
                       <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">
                         {new Date(org.createdAt).toLocaleDateString()}
                       </div>
-                      <Link href={`/super-admin/dealerships`}>
+                      <Link href={`/super-admin/dealerships/${org.id}`}>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all">
                           <ArrowRight className="h-4 w-4" />
                         </Button>

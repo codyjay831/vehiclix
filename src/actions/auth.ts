@@ -155,9 +155,14 @@ export async function loginAction(formData: FormData) {
     : user.role === Role.OWNER 
       ? "/admin" 
       : "/portal";
+  const redirectTarget = from || defaultRedirect;
 
-  console.log("LOGIN STEP: redirecting to", from || defaultRedirect);
-  redirect(from || defaultRedirect);
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'actions/auth.ts:loginRedirect',message:'post-login redirect',data:{userId:user.id,role:user.role,from,defaultRedirect,redirectTarget},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
+  // #endregion
+
+  console.log("LOGIN STEP: redirecting to", redirectTarget);
+  redirect(redirectTarget);
 }
 
 /**

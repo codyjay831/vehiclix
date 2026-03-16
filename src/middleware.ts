@@ -8,6 +8,15 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
 
+  // #region agent log
+  const sessionToken = request.cookies.get("evo_session")?.value;
+  const session = await decrypt(sessionToken);
+  const isMockAllowed = process.env.ALLOW_MOCK_AUTH === "true";
+  const mockRole = isMockAllowed ? request.cookies.get("evo_mock_role")?.value : null;
+  const role = session?.role || mockRole;
+  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:entry',message:'middleware',data:{pathname,host,isPlatformHost:isPlatformHost(host),hasSessionToken:!!sessionToken,role:role ?? null,isTwoFactorVerified:session?.isTwoFactorVerified ?? null,supportOrgId:session?.supportOrgId ?? null},timestamp:Date.now(),hypothesisId:'A,B,C,D'})}).catch(()=>{});
+  // #endregion
+
   // 1. Custom Domain Mapping & Routing
   // If this is NOT a platform host (e.g., luxevs.com instead of vehiclix.app)
   if (!isPlatformHost(host) && !pathname.startsWith("/api") && !pathname.startsWith("/_next") && !pathname.startsWith("/static")) {
@@ -30,6 +39,9 @@ export async function middleware(request: NextRequest) {
         request.nextUrl.searchParams.forEach((value, key) => {
           platformUrl.searchParams.set(key, value);
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:platformRedirect',message:'redirect to platform',data:{pathname,host,destination:platformUrl.toString(),reason:'custom_domain_admin_to_platform'},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         return NextResponse.redirect(platformUrl);
       }
     }
@@ -63,15 +75,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 2. Resolve Session (needed for both platform and custom domain rewrites)
-  const sessionToken = request.cookies.get("evo_session")?.value;
-  const session = await decrypt(sessionToken);
-
+  // 2. Resolve Session (already resolved at top for logging)
   // 3. Resolve Mock Identity (if enabled)
-  const isMockAllowed = process.env.ALLOW_MOCK_AUTH === "true";
-  const mockRole = isMockAllowed ? request.cookies.get("evo_mock_role")?.value : null;
-
-  const role = session?.role || mockRole;
 
   // 0. Legacy Redirection: Resolve ?org=<id> to /[dealerSlug]
   const orgId = request.nextUrl.searchParams.get("org");
@@ -108,7 +113,9 @@ export async function middleware(request: NextRequest) {
                 redirectUrl.searchParams.set(key, value);
               }
             });
-            
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:legacy307',message:'307 legacy org redirect',data:{pathname,newPathname,destination:redirectUrl.toString(),reason:'legacy_org'},timestamp:Date.now(),hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
             return NextResponse.redirect(redirectUrl, { status: 307 }); // Temporary redirect for safety
           }
         }
@@ -137,6 +144,9 @@ export async function middleware(request: NextRequest) {
     if (!role) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("from", pathname);
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:adminNoRole',message:'redirect',data:{pathname,destination:loginUrl.toString(),reason:'admin_no_role'},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
+      // #endregion
       return NextResponse.redirect(loginUrl);
     }
 
@@ -144,6 +154,9 @@ export async function middleware(request: NextRequest) {
     const isSupportMode = role === "SUPER_ADMIN" && session?.supportOrgId;
     
     if (role !== "OWNER" && !isSupportMode) {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:admin403',message:'403',data:{pathname,role,reason:'admin_not_owner_nor_support'},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       return new NextResponse("403 Forbidden: Owner or Support access required", { status: 403 });
     }
 
@@ -151,8 +164,14 @@ export async function middleware(request: NextRequest) {
     if (role === "OWNER" && session && !session.isTwoFactorVerified) {
       const verifyUrl = new URL("/login/verify-2fa", request.url);
       verifyUrl.searchParams.set("from", pathname);
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:admin2FA',message:'redirect to 2fa',data:{pathname,destination:verifyUrl.toString(),reason:'admin_owner_2fa_not_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       return NextResponse.redirect(verifyUrl);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:adminAllow',message:'admin allowed next()',data:{pathname,role},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
   }
 
   // 5. Customer Route Protection: /portal/*
@@ -176,7 +195,11 @@ export async function middleware(request: NextRequest) {
     
     if (session?.isTwoFactorVerified) {
       const from = request.nextUrl.searchParams.get("from") || "/admin";
-      return NextResponse.redirect(new URL(from, request.url));
+      const dest = new URL(from, request.url);
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:verify2faRedirect',message:'redirect from verify-2fa',data:{from,destination:dest.toString(),reason:'2fa_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      return NextResponse.redirect(dest);
     }
   }
 

@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { startSupportSession } from "@/actions/support";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, ExternalLink, Building2, Users, Car } from "lucide-react";
+import { Search, ExternalLink, Building2, Users, Car, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 interface Organization {
@@ -90,7 +91,12 @@ export function DealershipDirectory({ organizations }: { organizations: Organiza
                             <Building2 className="h-5 w-5 text-primary/40" />
                           </div>
                           <div>
-                            <div className="font-black uppercase tracking-tight italic text-sm">{org.name}</div>
+                            <Link
+                              href={`/super-admin/dealerships/${org.id}`}
+                              className="font-black uppercase tracking-tight italic text-sm hover:text-primary transition-colors block"
+                            >
+                              {org.name}
+                            </Link>
                             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                               /{org.slug}
                             </div>
@@ -116,22 +122,34 @@ export function DealershipDirectory({ organizations }: { organizations: Organiza
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-amber-600 border-amber-500/20 hover:bg-amber-50 hover:border-amber-500/40 transition-all"
-                          disabled={isPending !== null}
-                          onClick={() => handleStartPreview(org.id)}
-                        >
-                          {isPending === org.id ? (
-                            "Loading..."
-                          ) : (
-                            <>
-                              <ExternalLink className="h-3 w-3 mr-1.5" />
-                              Preview as Dealer
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link href={`/super-admin/dealerships/${org.id}`}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-9 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                            >
+                              <Eye className="h-3 w-3 mr-1.5" />
+                              View
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-amber-600 border-amber-500/20 hover:bg-amber-50 hover:border-amber-500/40 transition-all"
+                            disabled={isPending !== null}
+                            onClick={() => handleStartPreview(org.id)}
+                          >
+                            {isPending === org.id ? (
+                              "Loading..."
+                            ) : (
+                              <>
+                                <ExternalLink className="h-3 w-3 mr-1.5" />
+                                Preview as Dealer
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))

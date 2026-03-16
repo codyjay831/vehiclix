@@ -75,3 +75,98 @@ export async function getPlatformMetricsAction() {
     recentOrgs,
   };
 }
+
+/**
+ * Returns a single organization by id for Super Admin dealership detail view.
+ * Includes subscription, users, counts, and domains. SUPER_ADMIN only.
+ */
+export async function getOrganizationByIdAction(id: string) {
+  const user = await getAuthenticatedUser();
+
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized: Super Admin access required");
+  }
+
+  const organization = await db.organization.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      createdAt: true,
+      branding: {
+        select: {
+          contactEmail: true,
+        },
+      },
+      subscription: {
+        select: {
+          planKey: true,
+          status: true,
+          currentPeriodEnd: true,
+          trialEndsAt: true,
+          cancelAtPeriodEnd: true,
+        },
+      },
+      domains: {
+        select: {
+          id: true,
+          hostname: true,
+          isPrimary: true,
+          status: true,
+        },
+        orderBy: [{ isPrimary: "desc" }, { hostname: "asc" }],
+      },
+      users: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+        },
+      },
+      _count: {
+        select: {
+          vehicles: true,
+          users: true,
+        },
+      },
+    },
+  });
+
+  return organization;
+}
+
+/**
+ * Returns all users across the platform with organization info for Super Admin global user directory.
+ * SUPER_ADMIN only. Read-only.
+ */
+export async function getGlobalUsersAction() {
+  const user = await getAuthenticatedUser();
+
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized: Super Admin access required");
+  }
+
+  const users = await db.user.findMany({
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      createdAt: true,
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  return users;
+}
