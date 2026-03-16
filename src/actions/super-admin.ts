@@ -41,3 +41,37 @@ export async function getOrganizationsAction() {
 
   return organizations;
 }
+
+/**
+ * Returns platform-wide metrics for the Super Admin dashboard.
+ */
+export async function getPlatformMetricsAction() {
+  const user = await getAuthenticatedUser();
+
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized: Super Admin access required");
+  }
+
+  const [totalOrgs, totalUsers, totalVehicles, recentOrgs] = await Promise.all([
+    db.organization.count(),
+    db.user.count(),
+    db.vehicle.count(),
+    db.organization.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  return {
+    totalOrgs,
+    totalUsers,
+    totalVehicles,
+    recentOrgs,
+  };
+}

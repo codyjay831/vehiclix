@@ -11,9 +11,45 @@ const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({ adapter });
 
-async function main() {
-  console.log("Seeding initial organization and admin user...");
+async function seedBootstrap() {
+  console.log("--- Starting Platform Bootstrap Seed ---");
+  
+  const superAdminEmail = process.env.INITIAL_SUPER_ADMIN_EMAIL || "admin@vehiclix.app";
+  const superAdminPassword = process.env.INITIAL_SUPER_ADMIN_PASSWORD || "superadmin123";
+  const passwordHash = await bcrypt.hash(superAdminPassword, 10);
 
+  const superAdmin = await prisma.user.upsert({
+    where: { email: superAdminEmail },
+    update: {
+      firstName: "Platform",
+      lastName: "Admin",
+      role: Role.SUPER_ADMIN,
+      passwordHash,
+      isStub: false,
+      twoFactorEnabled: false,
+      organizationId: null,
+    },
+    create: {
+      email: superAdminEmail,
+      firstName: "Platform",
+      lastName: "Admin",
+      role: Role.SUPER_ADMIN,
+      passwordHash,
+      isStub: false,
+      twoFactorEnabled: false,
+      organizationId: null,
+    },
+  });
+
+  console.log(`✅ SUPER_ADMIN created/updated: ${superAdmin.email}`);
+  console.log(`   Temporary Password: ${superAdminPassword}`);
+  console.log("--- Bootstrap Complete ---");
+  return superAdmin;
+}
+
+async function seedDemo() {
+  console.log("--- Starting Demo Tenant Seed (Evo Motors) ---");
+  
   // 1. Create Default Organization (Evo Motors)
   const defaultSlug = normalizeSlug("Evo Motors");
   const evoMotors = await prisma.organization.upsert({
@@ -25,57 +61,44 @@ async function main() {
     },
   });
 
-  // Ensure Branding exists for the default org
+  // 2. Ensure Branding exists
   await prisma.organizationBranding.upsert({
     where: { organizationId: evoMotors.id },
     update: {},
     create: {
       organizationId: evoMotors.id,
       heroHeadline: "Experience Electric Excellence.",
-      heroSubheadline: "A highly-curated showroom of high-performance electric vehicles. Transparent specs, premium media, and home energy integration — redefining the used EV journey.",
-      aboutBlurb: "Evo Motors was born from a simple observation: the transition to electric mobility deserves a purchasing experience as sophisticated as the vehicles themselves.",
+      heroSubheadline: "A highly-curated showroom of high-performance electric vehicles.",
+      aboutBlurb: "Evo Motors boutique EV dealership demo.",
     },
   });
 
-  console.log(`✅ Organization created/updated: ${evoMotors.name} (${evoMotors.id})`);
+  // 3. Create Owner for Demo Org
+  const demoOwnerEmail = "owner@evomotors.demo";
+  const passwordHash = await bcrypt.hash("demoowner123", 10);
 
-  // 2. Create Admin User
-  const tempAdminPassword = process.env.INITIAL_ADMIN_PASSWORD || "theadmin123";
-  const passwordHash = await bcrypt.hash(tempAdminPassword, 10);
-
-  const adminEmail = "admin@evomotorsinc.com";
-
-  const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
+  await prisma.user.upsert({
+    where: { email: demoOwnerEmail },
     update: {
-      firstName: "Evo",
-      lastName: "Admin",
       role: Role.OWNER,
-      passwordHash,
-      isStub: false,
-      twoFactorEnabled: false,
       organizationId: evoMotors.id,
     },
     create: {
-      email: adminEmail,
+      email: demoOwnerEmail,
       firstName: "Evo",
-      lastName: "Admin",
+      lastName: "Owner",
       role: Role.OWNER,
       passwordHash,
       isStub: false,
-      twoFactorEnabled: false,
       organizationId: evoMotors.id,
     },
   });
 
-  console.log(`✅ Admin user created/updated successfully:`);
-  console.log(`   Email: ${admin.email}`);
-  console.log(`   Organization: ${evoMotors.name}`);
-  console.log(`   Initial Password: ${tempAdminPassword}`);
-
-  // 3. Backfill existing data if needed
-  console.log("\nStarting data backfill...");
-
+  console.log(`✅ Demo Organization: ${evoMotors.name} (${evoMotors.slug})`);
+  console.log(`✅ Demo Owner: ${demoOwnerEmail}`);
+  
+  // 4. Backfill existing orphaned data to demo org
+  console.log("Backfilling orphaned records to demo org...");
   const backfillModels = [
     { name: "Vehicle", model: prisma.vehicle },
     { name: "Deal", model: prisma.deal },
@@ -96,12 +119,21 @@ async function main() {
         console.log(`   Backfilled ${result.count} ${item.name} records.`);
       }
     } catch (e) {
-      // Skip if the model doesn't allow null organizationId
-      // console.log(`   Skipping backfill for ${item.name} (required field)`);
+      // Ignore models where organizationId is required
     }
   }
 
-  console.log("\n✅ Seed and backfill complete.");
+  console.log("--- Demo Seed Complete ---");
+}
+
+async function main() {
+  const mode = process.env.SEED_MODE || "BOOTSTRAP";
+  
+  await seedBootstrap();
+
+  if (mode === "DEMO") {
+    await seedDemo();
+  }
 }
 
 main()

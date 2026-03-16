@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed",
+    "db:seed:demo": "npx prisma db seed",
     "validate:support-mode": "tsx scripts/enforce-support-mode.ts"
   },
   "prisma": {

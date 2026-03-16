@@ -58,7 +58,7 @@ export default function AdminPage() {
             <div className="space-y-1">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground">Global Branding</h4>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                The public marketing website currently defaults to Evo Motors branding. 
+                The public marketing website currently defaults to platform branding. 
                 Custom dealer subdomains and white-labeling are scheduled for Phase 4.
               </p>
             </div>
