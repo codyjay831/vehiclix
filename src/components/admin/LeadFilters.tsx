@@ -26,6 +26,13 @@ export function LeadFilters({ countMap, totalCount }: LeadFiltersProps) {
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
+    const currentQ = searchParams.get("q") || "";
+    
+    // Only update if the search query has actually changed
+    if (debouncedSearch === currentQ) {
+      return;
+    }
+
     if (debouncedSearch) {
       params.set("q", debouncedSearch);
     } else {
