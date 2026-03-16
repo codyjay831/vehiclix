@@ -1,3 +1,4 @@
+import { Metadata } from "next";
 import { db } from "@/lib/db";
 import { requireUserWithOrg } from "@/lib/auth";
 import { BillingManagement } from "@/components/admin/BillingManagement";
