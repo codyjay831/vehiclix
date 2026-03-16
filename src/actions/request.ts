@@ -152,7 +152,7 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
 export async function updateRequestStatusAction(id: string, newStatus: VehicleRequestStatus) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -218,7 +218,7 @@ export async function updateRequestStatusAction(id: string, newStatus: VehicleRe
 export async function updateRequestPriorityAction(id: string, priority: Priority) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -246,7 +246,7 @@ export async function updateRequestPriorityAction(id: string, priority: Priority
 export async function updateRequestNotesAction(id: string, notes: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 

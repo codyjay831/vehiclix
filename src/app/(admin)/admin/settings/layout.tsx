@@ -5,6 +5,8 @@ import { Globe, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SettingsNav } from "@/components/admin/SettingsNav";
+import { Role } from "@prisma/client";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,10 @@ export default async function SettingsLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUserWithOrg();
+
+  if (user.role === Role.STAFF) {
+    redirect("/admin");
+  }
 
   const org = await db.organization.findUnique({
     where: { id: user.organizationId },

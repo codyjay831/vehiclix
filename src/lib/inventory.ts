@@ -1,12 +1,28 @@
 import { db } from "./db";
 import { VehicleWithMedia, VehicleStatus, Prisma } from "@/types";
+import { getStorageProvider } from "@/lib/storage/index";
+
+/**
+ * Enriches vehicle media with public URLs.
+ */
+function enrichVehicleMedia(vehicle: any) {
+  if (!vehicle || !vehicle.media) return vehicle;
+  
+  const storage = getStorageProvider();
+  vehicle.media = vehicle.media.map((m: any) => ({
+    ...m,
+    url: storage.getPublicUrl(m.url),
+  }));
+  
+  return vehicle;
+}
 
 /**
  * Fetches all vehicles for the admin inventory dashboard.
  * Includes associated media to display thumbnails.
  */
 export async function getAdminInventory(organizationId: string): Promise<VehicleWithMedia[]> {
-  return db.vehicle.findMany({
+  const vehicles = await db.vehicle.findMany({
     where: { organizationId },
     include: {
       media: {
@@ -33,6 +49,8 @@ export async function getAdminInventory(organizationId: string): Promise<Vehicle
       createdAt: "desc",
     },
   });
+
+  return vehicles.map(enrichVehicleMedia);
 }
 
 /**
@@ -48,7 +66,7 @@ export async function getVehicleForEdit(organizationId: string, id: string) {
  * Fetches a single vehicle with organization context, media, and metrics for admin view.
  */
 export async function getAdminVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
-  return db.vehicle.findFirst({
+  const vehicle = await db.vehicle.findFirst({
     where: { id, organizationId },
     include: {
       media: {
@@ -71,6 +89,8 @@ export async function getAdminVehicleDetail(organizationId: string, id: string):
       },
     },
   });
+
+  return enrichVehicleMedia(vehicle);
 }
 
 /**
@@ -123,7 +143,7 @@ export async function getPublicInventory(
     orderBy.push({ createdAt: "desc" });
   }
 
-  return db.vehicle.findMany({
+  const vehicles = await db.vehicle.findMany({
     where,
     include: {
       media: {
@@ -148,6 +168,8 @@ export async function getPublicInventory(
     },
     orderBy,
   });
+
+  return vehicles.map(enrichVehicleMedia);
 }
 
 /**
@@ -170,7 +192,7 @@ export async function getPublicMakes(organizationId: string): Promise<string[]> 
  * Fetches the 3 most recently created LISTED vehicles for the homepage.
  */
 export async function getFeaturedInventory(organizationId: string): Promise<VehicleWithMedia[]> {
-  return db.vehicle.findMany({
+  const vehicles = await db.vehicle.findMany({
     where: {
       organizationId,
       vehicleStatus: "LISTED" as VehicleStatus,
@@ -201,6 +223,8 @@ export async function getFeaturedInventory(organizationId: string): Promise<Vehi
     },
     take: 3,
   });
+
+  return vehicles.map(enrichVehicleMedia);
 }
 
 /**
@@ -208,7 +232,7 @@ export async function getFeaturedInventory(organizationId: string): Promise<Vehi
  * Strictly filters for LISTED vehicles.
  */
 export async function getPublicVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
-  return db.vehicle.findFirst({
+  const vehicle = await db.vehicle.findFirst({
     where: {
       id,
       organizationId,
@@ -235,4 +259,6 @@ export async function getPublicVehicleDetail(organizationId: string, id: string)
       },
     },
   });
+
+  return enrichVehicleMedia(vehicle);
 }

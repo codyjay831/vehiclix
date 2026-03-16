@@ -157,7 +157,7 @@ export async function middleware(request: NextRequest) {
     // Support Mode check: Allow SUPER_ADMIN only if supportOrgId is active
     const isSupportMode = role === "SUPER_ADMIN" && session?.supportOrgId;
     
-    if (role !== "OWNER" && !isSupportMode) {
+    if (role !== "OWNER" && role !== "STAFF" && !isSupportMode) {
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'middleware.ts:admin403',message:'403',data:{pathname,role,reason:'admin_not_owner_nor_support'},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
       // #endregion

@@ -493,6 +493,7 @@ enum Role {
   OWNER
   CUSTOMER
   SUPER_ADMIN
+  STAFF
 }
 
 enum BetaAccessStatus {

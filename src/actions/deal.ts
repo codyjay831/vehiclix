@@ -40,7 +40,7 @@ const CANCELLABLE_STATES: DealStatus[] = [
 export async function updateDealStatusAction(dealId: string, nextStatus: DealStatus) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -91,7 +91,7 @@ export async function updateDealStatusAction(dealId: string, nextStatus: DealSta
 export async function cancelDealAction(dealId: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -140,7 +140,7 @@ export async function cancelDealAction(dealId: string) {
 export async function initiateDocuSignAction(dealId: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 

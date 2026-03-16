@@ -59,7 +59,7 @@ export default async function LeadDetailPage({
   const assignableUsers = await db.user.findMany({
     where: { 
       organizationId: user.organizationId,
-      role: { in: [Role.OWNER] } // Expand later to STAFF
+      role: { in: [Role.OWNER, Role.STAFF] }
     },
     select: { id: true, firstName: true, lastName: true },
   });

@@ -84,7 +84,7 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
 export async function verifyDocumentAction(documentId: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -132,7 +132,7 @@ export async function verifyDocumentAction(documentId: string) {
 export async function rejectDocumentAction(documentId: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 

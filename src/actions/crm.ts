@@ -18,7 +18,7 @@ import { revalidatePath } from "next/cache";
 export async function addLeadNoteAction(leadId: string, body: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -50,7 +50,7 @@ export async function addLeadNoteAction(leadId: string, body: string) {
 export async function updateLeadStatusAction(leadId: string, newStatus: LeadStatus) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -96,7 +96,7 @@ export async function updateLeadStatusAction(leadId: string, newStatus: LeadStat
 export async function assignLeadAction(leadId: string, assigneeId: string | null) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 

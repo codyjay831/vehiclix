@@ -8,16 +8,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { VehicleStatus, Prisma, Role } from "@prisma/client";
-import fs from "fs/promises";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
+import { VehicleStatus, Prisma, Role, MediaType } from "@prisma/client";
+import { getStorageProvider } from "@/lib/storage/index";
 
 import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
-
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads", "inventory");
 
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
@@ -43,7 +39,7 @@ export async function isVinUnique(vin: string, excludeId?: string): Promise<bool
 export async function updateVehicleAction(vehicleId: string, formData: FormData) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
   
@@ -150,7 +146,7 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
 export async function updateVehicleStatusAction(vehicleId: string, newStatus: VehicleStatus) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -202,7 +198,7 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
 export async function createVehicleAction(formData: FormData) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -241,8 +237,21 @@ export async function createVehicleAction(formData: FormData) {
   // 6. Internal
   const internalNotes = (formData.get("internalNotes") as string) || null;
 
-  // Media (stub for now, as photo upload logic is missing in this version)
-  const mediaRecords: any[] = [];
+  // Media
+  const photos = formData.getAll("photos") as File[];
+  const storage = getStorageProvider();
+  
+  const mediaRecords = await Promise.all(
+    photos.map(async (file, index) => {
+      const key = await storage.save(file, { isPublic: true });
+      return {
+        mediaType: MediaType.IMAGE,
+        url: key,
+        displayOrder: index,
+      };
+    })
+  );
+
   const isPublishing = status === "LISTED";
 
   // Database Transaction

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Palette, Globe, LayoutDashboard, CreditCard } from "lucide-react";
+import { Palette, Globe, LayoutDashboard, CreditCard, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function SettingsNav() {
@@ -13,6 +13,11 @@ export function SettingsNav() {
       label: "Branding",
       href: "/admin/settings/branding",
       icon: Palette,
+    },
+    {
+      label: "Users",
+      href: "/admin/settings/users",
+      icon: Users,
     },
     {
       label: "Custom Domains",

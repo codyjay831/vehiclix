@@ -57,7 +57,7 @@ export function LeadFilters({ countMap, totalCount }: LeadFiltersProps) {
   return (
     <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
       <Tabs value={currentStage} onValueChange={handleStageChange} className="w-full md:w-auto">
-        <TabsList className="bg-muted/50 p-1 overflow-x-auto flex-nowrap w-full md:w-auto justify-start h-11">
+        <TabsList className="bg-muted/50 p-1 flex flex-wrap gap-1 w-full md:w-auto justify-start min-h-11 h-auto">
           <TabsTrigger value="ALL" className="text-[10px] font-black uppercase tracking-wider italic px-4 h-9">
             All ({totalCount})
           </TabsTrigger>

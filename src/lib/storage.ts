@@ -1,45 +1,30 @@
-import fs from "fs";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-
-const STORAGE_DIR = path.join(process.cwd(), "storage", "documents");
+import { getStorageProvider } from "./storage/index";
 
 /**
- * Saves a file to the private storage directory.
- * Returns the relative storage path.
+ * Backward compatible wrapper for the saveFile function.
+ * @param file The file to save.
+ * @returns The relative storage key/filename.
  */
 export async function saveFile(file: File): Promise<string> {
-  if (!fs.existsSync(STORAGE_DIR)) {
-    fs.mkdirSync(STORAGE_DIR, { recursive: true });
-  }
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  // Generate a unique filename to avoid collisions and obscure the original name
-  const extension = path.extname(file.name);
-  const filename = `${uuidv4()}${extension}`;
-  const filePath = path.join(STORAGE_DIR, filename);
-
-  fs.writeFileSync(filePath, buffer);
-
-  // Return the filename relative to the storage/documents directory
-  return filename;
+  const provider = getStorageProvider();
+  return provider.save(file, { isPublic: false });
 }
 
 /**
- * Returns the absolute path for a given storage filename.
+ * Returns the public URL for a given storage key.
+ * @param key The storage key.
+ * @returns The public URL.
  */
-export function getFilePath(filename: string): string {
-  return path.join(STORAGE_DIR, filename);
+export function getPublicUrl(key: string): string {
+  const provider = getStorageProvider();
+  return provider.getPublicUrl(key);
 }
 
 /**
- * Deletes a file from the private storage directory.
+ * Deletes a file from the storage system.
+ * @param key The storage key.
  */
-export function deleteFile(filename: string) {
-  const filePath = path.join(STORAGE_DIR, filename);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
+export async function deleteFile(key: string) {
+  const provider = getStorageProvider();
+  await provider.delete(key);
 }

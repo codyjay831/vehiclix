@@ -138,7 +138,7 @@ export async function submitInquiryAction(data: InquiryData) {
 export async function updateInquiryStatusAction(id: string, newStatus: InquiryStatus) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
@@ -203,7 +203,7 @@ export async function updateInquiryStatusAction(id: string, newStatus: InquirySt
 export async function updateInquiryNotesAction(id: string, notes: string) {
   await requireWriteAccess();
   const user = await requireUserWithOrg();
-  if (user.role !== Role.OWNER && !user.isSupportMode) {
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
     throw new Error("Unauthorized");
   }
 
