@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
 import { LeadStatus } from "@prisma/client";
 import { LeadListTable } from "@/components/admin/LeadListTable";
 import { LeadFilters } from "@/components/admin/LeadFilters";
@@ -18,10 +17,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<{ stage?: string; q?: string }>;
 }) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const { stage, q } = await searchParams;
   const currentStage = (stage?.toUpperCase() as LeadStatus) || "ALL";

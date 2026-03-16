@@ -25,6 +25,7 @@ export default async function SuperAdminLayout({
 
   const navItems = [
     { label: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
+    { label: "Dealerships", href: "/super-admin/dealerships", icon: Shield },
     { label: "Requests", href: "/super-admin/requests", icon: Users },
   ];
 

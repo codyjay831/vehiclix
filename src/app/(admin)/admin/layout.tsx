@@ -106,11 +106,18 @@ export default async function AdminLayout({
               <ShieldAlert className="h-4 w-4" />
               <span>Support Mode — Viewing <span className="underline decoration-2 underline-offset-4">{orgName}</span> as Platform Support</span>
             </div>
-            <form action={stopSupportSession}>
-              <Button size="sm" variant="secondary" className="h-7 text-[10px] font-black uppercase tracking-widest bg-white text-amber-600 hover:bg-white/90">
-                Stop Support Session
-              </Button>
-            </form>
+            <div className="flex items-center gap-3">
+              <Link href="/super-admin/dealerships">
+                <Button size="sm" variant="ghost" className="h-7 text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/20 border border-white/30">
+                  Switch Dealership
+                </Button>
+              </Link>
+              <form action={stopSupportSession}>
+                <Button size="sm" variant="secondary" className="h-7 text-[10px] font-black uppercase tracking-widest bg-white text-amber-600 hover:bg-white/90 shadow-sm">
+                  Stop Preview
+                </Button>
+              </form>
+            </div>
           </div>
         )}
         <BillingBanner subscription={organization?.subscription || null} />

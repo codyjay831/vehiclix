@@ -1,8 +1,6 @@
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
 import { BillingManagement } from "@/components/admin/BillingManagement";
-import { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function BillingSettingsPage() {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const subscription = await db.organizationSubscription.findUnique({
     where: { organizationId: user.organizationId },

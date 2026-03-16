@@ -3,8 +3,7 @@ import Link from "next/link";
 import { getAdminDeals } from "@/lib/deal";
 import { DEAL_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "@/types";
 import { DealStatus, PaymentStatus } from "@prisma/client";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
 import {
   Table,
   TableBody,
@@ -18,10 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight, FileText, Filter } from "lucide-react";
 
 export default async function AdminDealsPage() {
-  const user = await getAuthenticatedUser();
-  if (!user || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const deals = await getAdminDeals(user.organizationId);
 

@@ -1,8 +1,7 @@
 import { Metadata } from "next";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { requireUserWithOrg } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { BrandingEditorForm } from "@/components/admin/BrandingEditorForm";
-import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Website Branding | Admin",
@@ -10,11 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function BrandingSettingsPage() {
-  const user = await getAuthenticatedUser();
-
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const branding = await db.organizationBranding.findUnique({
     where: { organizationId: user.organizationId },

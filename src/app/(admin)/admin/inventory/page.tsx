@@ -4,14 +4,10 @@ import { Plus } from "lucide-react";
 import { getAdminInventory } from "@/lib/inventory";
 import { AdminInventoryTable } from "@/components/admin/AdminInventoryTable";
 import { Button } from "@/components/ui/button";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
 
 export default async function AdminInventoryPage() {
-  const user = await getAuthenticatedUser();
-  if (!user || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   // Direct server-side data fetching
   const vehicles = await getAdminInventory(user.organizationId);

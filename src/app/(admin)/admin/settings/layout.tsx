@@ -1,11 +1,9 @@
 import { Metadata } from "next";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { requireUserWithOrg } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
-import { Globe, ArrowLeft, Palette } from "lucide-react";
+import { Globe, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsNav } from "@/components/admin/SettingsNav";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +17,7 @@ export default async function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getAuthenticatedUser();
-
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const org = await db.organization.findUnique({
     where: { id: user.organizationId },

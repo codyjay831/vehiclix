@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { notFound, redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
+import { notFound } from "next/navigation";
 import { LeadTimeline } from "@/components/admin/LeadTimeline";
 import { LeadNoteComposer } from "@/components/admin/LeadNoteComposer";
 import { LeadStatusSelector } from "@/components/admin/LeadStatusSelector";
@@ -25,10 +25,7 @@ export default async function LeadDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const { id } = await params;
 

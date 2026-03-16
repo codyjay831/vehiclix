@@ -3,8 +3,7 @@ import Link from "next/link";
 import { getAdminRequests } from "@/lib/request";
 import { REQUEST_STATUS_LABELS } from "@/types";
 import { VehicleRequestStatus, Priority } from "@prisma/client";
-import { getAuthenticatedUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireUserWithOrg } from "@/lib/auth";
 import {
   Table,
   TableBody,
@@ -18,10 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRight, ClipboardList, Filter } from "lucide-react";
 
 export default async function AdminRequestsPage() {
-  const user = await getAuthenticatedUser();
-  if (!user || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const requests = await getAdminRequests(user.organizationId);
 

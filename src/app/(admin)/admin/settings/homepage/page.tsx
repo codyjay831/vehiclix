@@ -1,7 +1,6 @@
 import { Metadata } from "next";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { requireUserWithOrg } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
 
 import { HomepageEditorForm } from "@/components/admin/HomepageEditorForm";
 
@@ -11,10 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function HomepageSettingsPage() {
-  const user = await getAuthenticatedUser();
-  if (!user || user.role !== "OWNER" || !user.organizationId) {
-    redirect("/login");
-  }
+  const user = await requireUserWithOrg();
 
   const homepage = await db.organizationHomepage.findUnique({
     where: { organizationId: user.organizationId },
