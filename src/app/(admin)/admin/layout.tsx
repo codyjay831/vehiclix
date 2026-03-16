@@ -77,7 +77,7 @@ export default async function AdminLayout({
           </p>
         </div>
         <form action={logoutAction}>
-          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-destructive h-8 px-2">
+          <Button type="submit" variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-destructive h-8 px-2">
             <LogOut className="h-4 w-4 mr-2" />
             Logout
           </Button>
@@ -114,7 +114,7 @@ export default async function AdminLayout({
                 </Button>
               </Link>
               <form action={stopSupportSession}>
-                <Button size="sm" variant="secondary" className="h-7 text-[10px] font-black uppercase tracking-widest bg-white text-amber-600 hover:bg-white/90 shadow-sm">
+                <Button type="submit" size="sm" variant="secondary" className="h-7 text-[10px] font-black uppercase tracking-widest bg-white text-amber-600 hover:bg-white/90 shadow-sm">
                   Stop Preview
                 </Button>
               </form>

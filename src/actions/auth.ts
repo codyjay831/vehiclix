@@ -259,11 +259,14 @@ export async function registerAction(formData: FormData) {
  * Logout action.
  */
 export async function logoutAction() {
+  console.log("LOGOUT: logoutAction called");
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  console.log("LOGOUT: token present", !!token);
   const session = await decrypt(token);
 
   if (session) {
+    console.log("LOGOUT: session found for user", session.userId);
     await logAuditEvent({
       eventType: "auth.logout",
       actorId: session.userId,
@@ -272,12 +275,16 @@ export async function logoutAction() {
       entityId: session.userId,
       organizationId: session.organizationId || undefined,
     });
+  } else {
+    console.log("LOGOUT: no session found during logout");
   }
 
+  console.log("LOGOUT: deleting cookies");
   cookieStore.delete(SESSION_COOKIE_NAME);
   // HARDENING: Clear mock cookies to prevent implicit re-auth in development
   cookieStore.delete("evo_mock_role");
   cookieStore.delete("evo_mock_user_email");
+  console.log("LOGOUT: cookies deleted, redirecting to /login");
 
   redirect("/login");
 }

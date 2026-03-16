@@ -51,7 +51,7 @@ export default async function SuperAdminLayout({
           </p>
         </div>
         <form action={logoutAction}>
-          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-destructive h-8 px-2">
+          <Button type="submit" variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-destructive h-8 px-2">
             <LogOut className="h-4 w-4 mr-2" />
             Logout
           </Button>

@@ -81,24 +81,29 @@ export async function startSupportSession(orgId: string) {
  * Stops a support session.
  */
 export async function stopSupportSession() {
+  console.log("SUPPORT: stopSupportSession called");
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const payload = await decrypt(token);
 
   if (!payload) {
+    console.log("SUPPORT: no payload found during stopSupportSession, redirecting to login");
     redirect("/login");
   }
 
+  console.log("SUPPORT: payload found for user", payload.userId, "supportOrgId", payload.supportOrgId);
   const supportOrgId = payload.supportOrgId;
 
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+  console.log("SUPPORT: encrypting new session payload without supportOrgId");
   const session = await encrypt({
     ...payload,
     supportOrgId: null,
     expiresAt,
   });
 
+  console.log("SUPPORT: setting updated session cookie");
   cookieStore.set(SESSION_COOKIE_NAME, session, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -109,6 +114,7 @@ export async function stopSupportSession() {
 
   // Log audit event: support.session_ended
   if (supportOrgId) {
+    console.log("SUPPORT: logging support.session_ended for org", supportOrgId);
     await logAuditEvent({
       eventType: "support.session_ended",
       actorId: payload.userId,
@@ -119,5 +125,6 @@ export async function stopSupportSession() {
     });
   }
 
+  console.log("SUPPORT: support session stopped, redirecting to /super-admin/requests");
   redirect("/super-admin/requests");
 }

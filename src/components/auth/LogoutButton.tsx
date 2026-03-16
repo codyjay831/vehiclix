@@ -12,7 +12,7 @@ interface LogoutButtonProps {
   onLogout?: () => void;
 }
 
-function InnerButton({ variant, className }: { variant: "icon" | "full"; className?: string }) {
+function InnerButton({ variant, className, onLogout }: { variant: "icon" | "full"; className?: string; onLogout?: () => void }) {
   const { pending } = useFormStatus();
 
   if (variant === "icon") {
@@ -22,6 +22,9 @@ function InnerButton({ variant, className }: { variant: "icon" | "full"; classNa
         disabled={pending}
         variant="ghost"
         size="icon"
+        onClick={() => {
+          if (onLogout) onLogout();
+        }}
         className={cn("h-8 w-8 text-muted-foreground hover:text-destructive", className)}
       >
         <LogOut className="h-4 w-4" />
@@ -35,6 +38,9 @@ function InnerButton({ variant, className }: { variant: "icon" | "full"; classNa
       type="submit"
       disabled={pending}
       variant="ghost"
+      onClick={() => {
+        if (onLogout) onLogout();
+      }}
       className={cn(
         "w-full font-bold uppercase tracking-widest text-muted-foreground hover:text-destructive",
         className
@@ -54,11 +60,8 @@ export function LogoutButton({ variant = "icon", className, onLogout }: LogoutBu
     <form 
       action={logoutAction} 
       className={cn(variant === "full" && "w-full")}
-      onSubmit={() => {
-        if (onLogout) onLogout();
-      }}
     >
-      <InnerButton variant={variant} className={className} />
+      <InnerButton variant={variant} className={className} onLogout={onLogout} />
     </form>
   );
 }
