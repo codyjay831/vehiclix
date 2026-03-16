@@ -73,13 +73,24 @@ export default async function DealershipDetailPage({ params }: PageProps) {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <div>
-            <h1 className="text-3xl font-black uppercase tracking-tight italic">
-              {organization.name}
-            </h1>
-            <p className="text-muted-foreground font-bold uppercase tracking-widest text-xs mt-1">
-              Dealership detail · Platform management
-            </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <h1 className="text-3xl font-black uppercase tracking-tight italic">
+                {organization.name}
+              </h1>
+              <p className="text-muted-foreground font-bold uppercase tracking-widest text-xs mt-1">
+                Dealership detail · Platform management
+              </p>
+            </div>
+            <span
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
+                organization.status === "SUSPENDED"
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-primary/15 text-primary"
+              }`}
+            >
+              {organization.status === "SUSPENDED" ? "Suspended" : "Active"}
+            </span>
           </div>
         </div>
       </div>
@@ -152,6 +163,22 @@ export default async function DealershipDetailPage({ params }: PageProps) {
                         dateStyle: "medium",
                       }
                     )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 sm:col-span-2">
+                  <span className="text-muted-foreground font-medium">
+                    Account status
+                  </span>
+                  <span
+                    className={`font-bold ${
+                      organization.status === "SUSPENDED"
+                        ? "text-destructive"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {organization.status === "SUSPENDED"
+                      ? "Suspended"
+                      : "Active"}
                   </span>
                 </div>
               </div>
@@ -273,6 +300,7 @@ export default async function DealershipDetailPage({ params }: PageProps) {
           <DealershipQuickActions
             organizationId={organization.id}
             slug={organization.slug}
+            status={organization.status}
           />
         </div>
       </div>

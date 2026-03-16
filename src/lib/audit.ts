@@ -27,6 +27,8 @@ export type AuditEventType =
   | "organization.create"
   | "organization.update_slug"
   | "organization.update_branding"
+  | "organization.suspended"
+  | "organization.reactivated"
   | "system.test"
   | "inquiry.submitted"
   | "deal.cancelled"

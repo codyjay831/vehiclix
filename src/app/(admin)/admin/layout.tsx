@@ -46,6 +46,31 @@ export default async function AdminLayout({
   const orgName = organization?.name || BRANDING.companyName;
   const orgPrefix = orgName.split(' ')[0].toUpperCase();
 
+  // Block OWNER when dealership is suspended; SUPER_ADMIN in support mode can still access
+  const isSuspended = organization?.status === "SUSPENDED";
+  if (!isSupportMode && isSuspended) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
+        <div className="max-w-md w-full rounded-2xl border-2 border-destructive/20 bg-card p-8 text-center shadow-xl">
+          <h1 className="text-2xl font-black uppercase tracking-tight text-destructive">
+            Account suspended
+          </h1>
+          <p className="mt-4 text-muted-foreground">
+            This dealership account has been suspended by the platform. You cannot access admin until it is reactivated.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Contact platform support if you believe this is an error.
+          </p>
+          <form action={logoutAction} className="mt-8">
+            <Button type="submit" variant="outline" size="sm">
+              Log out
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "Leads", href: "/admin/leads", icon: Users },

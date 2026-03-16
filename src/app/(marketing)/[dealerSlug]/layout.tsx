@@ -54,6 +54,22 @@ export default async function DealerLayout({
     return notFound();
   }
 
+  // Suspended dealerships: show controlled message instead of storefront
+  if (organization.status === "SUSPENDED") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
+        <div className="max-w-md w-full rounded-2xl border-2 border-muted bg-card p-8 text-center shadow-xl">
+          <h1 className="text-2xl font-black uppercase tracking-tight">
+            Temporarily unavailable
+          </h1>
+          <p className="mt-4 text-muted-foreground">
+            This dealership&apos;s showroom is currently unavailable. Please check back later.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const user = await getAuthenticatedUser();
   const userRole = user?.role || null;
 

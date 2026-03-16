@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, Users, Shield, LogOut, Menu, UserCircle } from "lucide-react";
+import { LayoutDashboard, Users, Shield, LogOut, Menu, UserCircle, ScrollText } from "lucide-react";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { logoutAction } from "@/actions/auth";
@@ -27,6 +27,7 @@ export default async function SuperAdminLayout({
     { label: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
     { label: "Dealerships", href: "/super-admin/dealerships", icon: Shield },
     { label: "Users", href: "/super-admin/users", icon: UserCircle },
+    { label: "System", href: "/super-admin/system", icon: ScrollText },
     { label: "Requests", href: "/super-admin/requests", icon: Users },
   ];
 

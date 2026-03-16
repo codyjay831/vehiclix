@@ -13,6 +13,7 @@ interface Organization {
   id: string;
   name: string;
   slug: string;
+  status?: "ACTIVE" | "SUSPENDED";
   createdAt: Date;
   branding: {
     contactEmail: string | null;
@@ -90,16 +91,23 @@ export function DealershipDirectory({ organizations }: { organizations: Organiza
                           <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center">
                             <Building2 className="h-5 w-5 text-primary/40" />
                           </div>
-                          <div>
-                            <Link
-                              href={`/super-admin/dealerships/${org.id}`}
-                              className="font-black uppercase tracking-tight italic text-sm hover:text-primary transition-colors block"
-                            >
-                              {org.name}
-                            </Link>
-                            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                              /{org.slug}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div>
+                              <Link
+                                href={`/super-admin/dealerships/${org.id}`}
+                                className="font-black uppercase tracking-tight italic text-sm hover:text-primary transition-colors block"
+                              >
+                                {org.name}
+                              </Link>
+                              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                                /{org.slug}
+                              </div>
                             </div>
+                            {org.status === "SUSPENDED" && (
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest bg-destructive/15 text-destructive">
+                                Suspended
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>

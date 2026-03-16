@@ -22,6 +22,7 @@ export async function middleware(request: NextRequest) {
   if (!isPlatformHost(host) && !pathname.startsWith("/api") && !pathname.startsWith("/_next") && !pathname.startsWith("/static")) {
     // A. System Route Protection on Custom Domains
     // Redirect /admin, /portal, /login to platform domain for security and consistency
+    // Do NOT redirect to /admin when the request is already for /admin (avoids 307 loop when host is misdetected)
     if (
       pathname.startsWith("/admin") || 
       pathname.startsWith("/portal") || 
@@ -34,6 +35,9 @@ export async function middleware(request: NextRequest) {
       
       if (normalizedHost === platformDomain || normalizedHost.endsWith("." + platformDomain)) {
         // Redundant redirect avoided
+      } else if (pathname.startsWith("/admin")) {
+        // Avoid redirect loop: never respond to /admin with 307 → /admin (e.g. www vs non-www or proxy host mismatch)
+        return NextResponse.next();
       } else {
         const platformUrl = new URL(pathname, `https://${BRANDING.platformDomain}`);
         request.nextUrl.searchParams.forEach((value, key) => {
