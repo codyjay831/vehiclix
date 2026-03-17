@@ -9,7 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { VehicleStatus, Prisma, Role, MediaType } from "@prisma/client";
-import { getStorageProvider } from "@/lib/storage/index";
+import { getStorageProvider } from "@/lib/storage";
 
 import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";

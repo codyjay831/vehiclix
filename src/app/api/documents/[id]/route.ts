@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getStorageProvider } from "@/lib/storage/index";
+import { getStorageProvider } from "@/lib/storage";
 import path from "path";
 
 /**

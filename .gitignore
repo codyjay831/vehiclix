@@ -6,3 +6,6 @@ node_modules
 /src/generated/prisma
 
 storage/
+# Allow src/lib/storage (provider implementation)
+!src/lib/storage/
+!src/lib/storage/**

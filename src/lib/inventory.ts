@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { VehicleWithMedia, VehicleStatus, Prisma } from "@/types";
-import { getStorageProvider } from "@/lib/storage/index";
+import { getStorageProvider } from "@/lib/storage";
 
 /**
  * Enriches vehicle media with public URLs.
