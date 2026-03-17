@@ -39,8 +39,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
-import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle } from "lucide-react";
 import { decodeVin } from "@/lib/vin";
+
+const REQUIRED_FIELD_NAMES = new Set([
+  "vin", "year", "make", "model", "mileage", "drivetrain",
+  "exteriorColor", "interiorColor", "condition", "titleStatus", "price",
+]);
+function requiredFieldErrorClass(fieldName: string, invalid: boolean): string {
+  return invalid && REQUIRED_FIELD_NAMES.has(fieldName) ? "border-destructive ring-2 ring-destructive/20" : "";
+}
 
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters"),
@@ -48,9 +57,16 @@ const vehicleSchema = z.object({
   make: z.string().min(1, "Make is required"),
   model: z.string().min(1, "Model is required"),
   trim: z.string().optional().nullable(),
+  bodyStyle: z.string().optional().nullable(),
+  fuelType: z.string().optional().nullable(),
+  transmission: z.string().optional().nullable(),
+  doors: z.coerce.number().min(2).max(5).optional().nullable(),
   mileage: z.coerce.number().min(0, "Mileage cannot be negative"),
   drivetrain: z.nativeEnum(Drivetrain),
   batteryRange: z.coerce.number().optional().nullable(),
+  batteryCapacityKWh: z.coerce.number().min(0).max(500).optional().nullable(),
+  batteryChemistry: z.string().optional().nullable(),
+  chargingStandard: z.string().optional().nullable(),
   exteriorColor: z.string().min(1, "Exterior color is required"),
   interiorColor: z.string().min(1, "Interior color is required"),
   condition: z.nativeEnum(InventoryCondition),
@@ -75,9 +91,16 @@ interface VehicleFormValues {
   make: string;
   model: string;
   trim?: string | null;
+  bodyStyle?: string | null;
+  fuelType?: string | null;
+  transmission?: string | null;
+  doors?: number | null;
   mileage: number;
   drivetrain: Drivetrain;
   batteryRange?: number | null;
+  batteryCapacityKWh?: number | null;
+  batteryChemistry?: string | null;
+  chargingStandard?: string | null;
   exteriorColor: string;
   interiorColor: string;
   condition: InventoryCondition;
@@ -104,6 +127,13 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       ...initialData,
       price: Number(initialData.price),
       batteryRange: initialData.batteryRangeEstimate,
+      bodyStyle: initialData.bodyStyle ?? null,
+      fuelType: initialData.fuelType ?? null,
+      transmission: initialData.transmission ?? null,
+      doors: initialData.doors ?? null,
+      batteryCapacityKWh: initialData.batteryCapacityKWh ?? null,
+      batteryChemistry: initialData.batteryChemistry ?? null,
+      chargingStandard: initialData.chargingStandard ?? null,
     } : {
       highlights: [],
       features: [],
@@ -120,6 +150,33 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     name: "features" as any,
   });
 
+  const watched = form.watch([
+    "vin", "year", "make", "model", "mileage", "drivetrain",
+    "exteriorColor", "interiorColor", "condition", "titleStatus", "price",
+    "description", "highlights",
+  ]);
+  const yearNum = Number(watched[1]);
+  const yearPlausible = !Number.isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear() + 1;
+  const section1Complete = Boolean(
+    watched[0]?.length === 17 &&
+    yearPlausible &&
+    String(watched[2] ?? "").trim() &&
+    String(watched[3] ?? "").trim()
+  );
+  const section2Complete = Boolean(Number(watched[4]) >= 0 && watched[5]);
+  const section3Complete = Boolean(
+    String(watched[6] ?? "").trim() &&
+    String(watched[7] ?? "").trim() &&
+    watched[8] &&
+    watched[9]
+  );
+  const section4Complete = Boolean(Number(watched[10]) >= 1000);
+  const section5Complete = Boolean(
+    String(watched[11] ?? "").trim() ||
+    (Array.isArray(watched[12]) && watched[12].some((h: string) => String(h ?? "").trim()))
+  );
+  const section6Complete = isEdit || photos.length >= 1;
+
   const handleDecodeVin = async () => {
     const vin = form.getValues("vin");
     if (!vin || vin.length !== 17) {
@@ -131,26 +188,29 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     try {
       const data = await decodeVin(vin);
       if (data) {
-        if (data.year) form.setValue("year", data.year);
-        if (data.make) form.setValue("make", data.make);
-        if (data.model) form.setValue("model", data.model);
-        if (data.trim) form.setValue("trim", data.trim);
-        if (data.drivetrain) form.setValue("drivetrain", data.drivetrain);
-        
-        // Add additional specs to highlights if they aren't already there
+        const isStringEmpty = (v: unknown) => v == null || v === undefined || !String(v ?? "").trim();
+        const isNumberEmpty = (v: unknown) =>
+          v == null || v === undefined || v === "" || (typeof v === "number" && (Number.isNaN(v) || v === 0));
+
+        if (data.year != null && isNumberEmpty(form.getValues("year"))) form.setValue("year", data.year);
+        if (data.make && isStringEmpty(form.getValues("make"))) form.setValue("make", data.make);
+        if (data.model && isStringEmpty(form.getValues("model"))) form.setValue("model", data.model);
+        if (data.trim != null && isStringEmpty(form.getValues("trim"))) form.setValue("trim", data.trim);
+        if (data.drivetrain && isStringEmpty(form.getValues("drivetrain"))) form.setValue("drivetrain", data.drivetrain);
+        if (data.bodyStyle != null && isStringEmpty(form.getValues("bodyStyle"))) form.setValue("bodyStyle", data.bodyStyle);
+        if (data.fuelType != null && isStringEmpty(form.getValues("fuelType"))) form.setValue("fuelType", data.fuelType);
+        if (data.transmission != null && isStringEmpty(form.getValues("transmission"))) form.setValue("transmission", data.transmission);
+        if (data.doors != null && isNumberEmpty(form.getValues("doors"))) form.setValue("doors", data.doors);
+        if (data.batteryCapacityKWh != null && isNumberEmpty(form.getValues("batteryCapacityKWh"))) form.setValue("batteryCapacityKWh", data.batteryCapacityKWh);
+
         const currentHighlights = form.getValues("highlights") || [];
         const newHighlights = [...currentHighlights];
-        
-        if (data.bodyType && !newHighlights.includes(`Body: ${data.bodyType}`)) {
-          newHighlights.push(`Body: ${data.bodyType}`);
-        }
         if (data.engine && !newHighlights.includes(`Engine: ${data.engine}`)) {
           newHighlights.push(`Engine: ${data.engine}`);
         }
         if (data.horsepower && !newHighlights.includes(`${data.horsepower} HP`)) {
           newHighlights.push(`${data.horsepower} HP`);
         }
-        
         form.setValue("highlights", newHighlights);
         toast.success("Vehicle data populated from VIN");
       } else {
@@ -249,18 +309,21 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {/* Section 1: Identification */}
         <Card>
           <CardHeader>
-            <CardTitle>1. Vehicle Identification</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              1. Vehicle Identification
+              {section1Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col md:flex-row gap-6 items-end">
               <FormField
                 control={form.control}
                 name="vin"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem className="flex-grow">
                     <FormLabel>VIN</FormLabel>
                     <FormControl>
-                      <Input placeholder="17-character VIN" {...field} value={field.value || ""} maxLength={17} className="uppercase font-mono" />
+                      <Input placeholder="17-character VIN" {...field} value={field.value || ""} maxLength={17} className={cn("uppercase font-mono", requiredFieldErrorClass("vin", fieldState.invalid))} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -286,11 +349,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <FormField
                 control={form.control}
                 name="year"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Year</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} value={field.value || ""} />
+                      <Input type="number" {...field} value={field.value || ""} className={requiredFieldErrorClass("year", fieldState.invalid)} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -299,11 +362,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <FormField
                 control={form.control}
                 name="make"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Make</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} />
+                      <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} className={requiredFieldErrorClass("make", fieldState.invalid)} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -312,11 +375,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <FormField
                 control={form.control}
                 name="model"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Model</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} />
+                      <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} className={requiredFieldErrorClass("model", fieldState.invalid)} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -342,17 +405,20 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {/* Section 2: Specifications */}
         <Card>
           <CardHeader>
-            <CardTitle>2. Specifications</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              2. Specifications
+              {section2Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <FormField
               control={form.control}
               name="mileage"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Mileage</FormLabel>
                   <FormControl>
-                    <Input type="number" {...field} value={field.value || ""} />
+                    <Input type="number" {...field} value={field.value || ""} className={requiredFieldErrorClass("mileage", fieldState.invalid)} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -361,12 +427,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             <FormField
               control={form.control}
               name="drivetrain"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Drivetrain</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className={requiredFieldErrorClass("drivetrain", fieldState.invalid)}>
                         <SelectValue placeholder="Select drivetrain" />
                       </SelectTrigger>
                     </FormControl>
@@ -384,6 +450,58 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             />
             <FormField
               control={form.control}
+              name="bodyStyle"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Body Style (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., Sedan, SUV" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="fuelType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fuel Type (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., Gasoline, Electric" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="transmission"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Transmission (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., Automatic, CVT" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="doors"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Doors (Optional)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={2} max={5} placeholder="2–5" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="batteryRange"
               render={({ field }) => (
                 <FormItem>
@@ -395,27 +513,105 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="exteriorColor"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Exterior Color</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Midnight Silver" {...field} value={field.value || ""} />
+            {(() => {
+              const fuelType = form.watch("fuelType");
+              const ft = (fuelType ?? "").trim().toLowerCase();
+              const isElectric = ft.includes("electric") || ft.includes("battery") || ft === "ev" || ft.includes("bev") || ft.includes("phev");
+              if (!isElectric) return null;
+              return (
+                <div className="col-span-1 md:col-span-2 lg:col-span-3 space-y-4">
+                  <Separator className="my-6" />
+                  <p className="text-sm font-medium text-muted-foreground">EV specifications (optional)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 min-w-0">
+                    <FormField
+                      control={form.control}
+                      name="batteryCapacityKWh"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Battery Capacity (kWh)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min={0} max={500} step={0.1} placeholder="e.g. 75" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="batteryChemistry"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Battery Chemistry</FormLabel>
+                          <Select onValueChange={(v) => field.onChange(v === "" ? null : v)} value={field.value ?? ""}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select or leave empty" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="">—</SelectItem>
+                              <SelectItem value="LFP">LFP</SelectItem>
+                              <SelectItem value="NMC">NMC</SelectItem>
+                              <SelectItem value="NCA">NCA</SelectItem>
+                              <SelectItem value="LMO">LMO</SelectItem>
+                              <SelectItem value="LCO">LCO</SelectItem>
+                              <SelectItem value="Unknown">Unknown</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="chargingStandard"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Charging Standard</FormLabel>
+                          <Select onValueChange={(v) => field.onChange(v === "" ? null : v)} value={field.value ?? ""}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select or leave empty" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="">—</SelectItem>
+                              <SelectItem value="NACS">NACS</SelectItem>
+                              <SelectItem value="CCS">CCS</SelectItem>
+                              <SelectItem value="CHAdeMO">CHAdeMO</SelectItem>
+                              <SelectItem value="J1772">J1772</SelectItem>
+                              <SelectItem value="Unknown">Unknown</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+              <FormField
+                control={form.control}
+                name="exteriorColor"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>Exterior Color</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Midnight Silver" {...field} value={field.value || ""} className={requiredFieldErrorClass("exteriorColor", fieldState.invalid)} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="interiorColor"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Interior Color</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Black Vegan Leather" {...field} value={field.value || ""} />
+              <FormField
+                control={form.control}
+                name="interiorColor"
+                render={({ field, fieldState }) => (
+                  <FormItem>
+                    <FormLabel>Interior Color</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Black Vegan Leather" {...field} value={field.value || ""} className={requiredFieldErrorClass("interiorColor", fieldState.invalid)} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -427,19 +623,22 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {/* Section 3: Condition & History */}
         <Card>
           <CardHeader>
-            <CardTitle>3. Condition & History</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              3. Condition & History
+              {section3Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField
                 control={form.control}
                 name="condition"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Inventory Condition</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className={requiredFieldErrorClass("condition", fieldState.invalid)}>
                           <SelectValue placeholder="Select condition" />
                         </SelectTrigger>
                       </FormControl>
@@ -458,12 +657,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <FormField
                 control={form.control}
                 name="titleStatus"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Title Status</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className={requiredFieldErrorClass("titleStatus", fieldState.invalid)}>
                           <SelectValue placeholder="Select title status" />
                         </SelectTrigger>
                       </FormControl>
@@ -504,19 +703,22 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {/* Section 4: Pricing */}
         <Card>
           <CardHeader>
-            <CardTitle>4. Pricing</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              4. Pricing
+              {section4Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <FormField
               control={form.control}
               name="price"
-              render={({ field }) => (
+              render={({ field, fieldState }) => (
                 <FormItem className="max-w-xs">
                   <FormLabel>Listing Price (USD)</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <span className="absolute left-3 top-2.5">$</span>
-                      <Input type="number" className="pl-6" {...field} value={field.value || ""} />
+                      <Input type="number" className={cn("pl-6", requiredFieldErrorClass("price", fieldState.invalid))} {...field} value={field.value || ""} />
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -529,7 +731,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {/* Section 5: Description & Highlights */}
         <Card>
           <CardHeader>
-            <CardTitle>5. Description & Highlights</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              5. Description & Highlights
+              {section5Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-8">
             <FormField
@@ -624,7 +829,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         {!isEdit && (
           <Card>
             <CardHeader>
-              <CardTitle>6. Photos</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                6. Photos
+                {section6Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div

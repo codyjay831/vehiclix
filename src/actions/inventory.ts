@@ -60,14 +60,28 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
   const year = parseInt(formData.get("year") as string);
   const make = formData.get("make") as string;
   const model = formData.get("model") as string;
-  const trim = (formData.get("trim") as string) || null;
+  const trim = (formData.get("trim") as string)?.trim() || null;
 
-  // 2. Specs
+  // 2. Specs (Phase 2 optional fields)
+  const bodyStyle = (formData.get("bodyStyle") as string)?.trim() || null;
+  const fuelType = (formData.get("fuelType") as string)?.trim() || null;
+  const transmission = (formData.get("transmission") as string)?.trim() || null;
+  const doorsRaw = formData.get("doors");
+  const doors = doorsRaw != null && String(doorsRaw).trim() !== ""
+    ? (() => { const n = parseInt(String(doorsRaw).trim(), 10); return (Number.isNaN(n) || n < 2 || n > 5) ? null : n; })()
+    : null;
+
   const mileage = parseInt(formData.get("mileage") as string);
   const drivetrain = formData.get("drivetrain") as any;
   const batteryRange = formData.get("batteryRange")
     ? parseInt(formData.get("batteryRange") as string)
     : null;
+  const batteryCapacityKWhRaw = formData.get("batteryCapacityKWh");
+  const batteryCapacityKWh = batteryCapacityKWhRaw != null && String(batteryCapacityKWhRaw).trim() !== ""
+    ? (() => { const n = parseFloat(String(batteryCapacityKWhRaw).trim()); return Number.isNaN(n) || n < 0 ? null : n; })()
+    : null;
+  const batteryChemistry = (formData.get("batteryChemistry") as string)?.trim() || null;
+  const chargingStandard = (formData.get("chargingStandard") as string)?.trim() || null;
   const exteriorColor = formData.get("exteriorColor") as string;
   const interiorColor = formData.get("interiorColor") as string;
 
@@ -106,9 +120,16 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
         make,
         model,
         trim,
+        bodyStyle,
+        fuelType,
+        transmission,
+        doors,
         mileage,
         drivetrain,
         batteryRangeEstimate: batteryRange,
+        batteryCapacityKWh,
+        batteryChemistry,
+        chargingStandard,
         exteriorColor,
         interiorColor,
         condition,
@@ -209,14 +230,28 @@ export async function createVehicleAction(formData: FormData) {
   const year = parseInt(formData.get("year") as string);
   const make = formData.get("make") as string;
   const model = formData.get("model") as string;
-  const trim = (formData.get("trim") as string) || null;
+  const trim = (formData.get("trim") as string)?.trim() || null;
 
-  // 2. Specs
+  // 2. Specs (Phase 2 optional fields)
+  const bodyStyle = (formData.get("bodyStyle") as string)?.trim() || null;
+  const fuelType = (formData.get("fuelType") as string)?.trim() || null;
+  const transmission = (formData.get("transmission") as string)?.trim() || null;
+  const doorsRaw = formData.get("doors");
+  const doors = doorsRaw != null && String(doorsRaw).trim() !== ""
+    ? (() => { const n = parseInt(String(doorsRaw).trim(), 10); return (Number.isNaN(n) || n < 2 || n > 5) ? null : n; })()
+    : null;
+
   const mileage = parseInt(formData.get("mileage") as string);
   const drivetrain = formData.get("drivetrain") as any;
   const batteryRange = formData.get("batteryRange")
     ? parseInt(formData.get("batteryRange") as string)
     : null;
+  const batteryCapacityKWhRaw = formData.get("batteryCapacityKWh");
+  const batteryCapacityKWh = batteryCapacityKWhRaw != null && String(batteryCapacityKWhRaw).trim() !== ""
+    ? (() => { const n = parseFloat(String(batteryCapacityKWhRaw).trim()); return Number.isNaN(n) || n < 0 ? null : n; })()
+    : null;
+  const batteryChemistry = (formData.get("batteryChemistry") as string)?.trim() || null;
+  const chargingStandard = (formData.get("chargingStandard") as string)?.trim() || null;
   const exteriorColor = formData.get("exteriorColor") as string;
   const interiorColor = formData.get("interiorColor") as string;
 
@@ -263,9 +298,16 @@ export async function createVehicleAction(formData: FormData) {
         make,
         model,
         trim,
+        bodyStyle,
+        fuelType,
+        transmission,
+        doors,
         mileage,
         drivetrain,
         batteryRangeEstimate: batteryRange,
+        batteryCapacityKWh,
+        batteryChemistry,
+        chargingStandard,
         exteriorColor,
         interiorColor,
         condition,

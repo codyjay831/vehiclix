@@ -6,6 +6,7 @@ import { getPublicVehicleDetail } from "@/lib/inventory";
 import { serializeDecimal } from "@/lib/serializers";
 import { getOrganizationBySlug, getCanonicalUrl } from "@/lib/organization";
 import { MediaGallery } from "@/components/public/MediaGallery";
+import { VehicleSpecChips } from "@/components/public/VehicleSpecChips";
 import { VehicleSpecs } from "@/components/public/VehicleSpecs";
 import { PricingPanel } from "@/components/public/PricingPanel";
 import { VdpContent } from "@/components/public/VdpContent";
@@ -127,6 +128,7 @@ export default async function VdpPage({ params }: VdpPageProps) {
             )}
           </div>
         </div>
+        <VehicleSpecChips vehicle={serializedVehicle} className="mt-2" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">

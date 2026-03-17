@@ -129,9 +129,16 @@ model Vehicle {
   make                 String
   model                String
   trim                 String?
+  bodyStyle            String?
+  fuelType             String?
+  transmission         String?
+  doors                Int?
   mileage              Int
   drivetrain           Drivetrain
   batteryRangeEstimate Int?
+  batteryCapacityKWh   Float?
+  batteryChemistry     String?
+  chargingStandard     String?
   exteriorColor        String
   interiorColor        String
   titleStatus          TitleStatus
