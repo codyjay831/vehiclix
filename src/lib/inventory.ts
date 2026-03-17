@@ -1,19 +1,22 @@
 import { db } from "./db";
 import { VehicleWithMedia, VehicleStatus, Prisma } from "@/types";
-import { getStorageProvider } from "@/lib/storage";
+import { getPublicUrl } from "@/lib/storage";
 
 /**
  * Enriches vehicle media with public URLs.
+ * Uses centralized getPublicUrl so legacy values are supported:
+ * - Full URL (http/https): returned as-is.
+ * - Legacy paths (/uploads/inventory/..., uploads/inventory/...): normalized to key then resolved.
+ * - Bare key: resolved via active provider.
  */
 function enrichVehicleMedia(vehicle: any) {
   if (!vehicle || !vehicle.media) return vehicle;
-  
-  const storage = getStorageProvider();
+
   vehicle.media = vehicle.media.map((m: any) => ({
     ...m,
-    url: storage.getPublicUrl(m.url),
+    url: getPublicUrl(m.url),
   }));
-  
+
   return vehicle;
 }
 

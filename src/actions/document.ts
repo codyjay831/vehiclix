@@ -79,7 +79,7 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
     }),
   ]);
 
-  // Clean up old file if it was replaced
+  // Clean up old file if it was replaced (targeted cleanup; deleteFile supports legacy path shapes)
   if (existingDoc?.fileUrl) {
     try {
       await deleteFile(existingDoc.fileUrl);
@@ -87,6 +87,8 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
       console.warn(`Failed to cleanup orphaned document file: ${existingDoc.fileUrl}`, error);
     }
   }
+  // CLEANUP GAP NOTE: If a future flow "removes" a document (e.g. sets fileUrl to null or deletes
+  // the DealDocument row), call deleteFile(record.fileUrl) before updating DB to avoid orphaned files.
 
   revalidatePath("/portal/documents");
   revalidatePath("/portal");

@@ -16,13 +16,15 @@ import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } fro
 import { requireWriteAccess } from "@/lib/support";
 
 /**
- * STORAGE CLEANUP NOTE:
- * Orphaned files can occur when:
- * 1. A Vehicle is deleted (linked VehicleMedia records are deleted via DB CASCADE, but storage files remain)
- * 2. Media management is added in the future and doesn't explicitly call storage.deleteFile()
- * 
- * TODO: Implement a background cleanup job or add explicit storage.deleteFile() calls 
- * when a proper deleteVehicleAction is implemented.
+ * STORAGE CLEANUP GAP (documented — not fixed in this pass):
+ * - Vehicle delete: There is no deleteVehicleAction in this codebase. If one is added, or if
+ *   vehicles/media are deleted via DB (CASCADE removes VehicleMedia rows), storage files are
+ *   NOT removed. Safe fix: when implementing vehicle/media delete, fetch media URLs and call
+ *   deleteFile() from @/lib/storage for each before deleting DB rows.
+ * - Document replace: Orphan cleanup is already implemented in document.ts (uploadDocumentAction
+ *   deletes the previous file when a document is re-uploaded).
+ * - Adding a broad background cleanup job would require design (e.g. list bucket vs DB keys);
+ *   prefer targeted cleanup at delete time when those flows exist.
  */
 
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];

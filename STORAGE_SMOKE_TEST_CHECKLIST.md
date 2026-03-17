@@ -1,56 +1,52 @@
-# Storage Provider Smoke Test Checklist
+# Storage Smoke Test Checklist
 
-This checklist covers manual verification of the storage system in both Local and Google Cloud Storage (GCS) modes, including legacy compatibility.
-
-## A. Local Mode Smoke Tests
-*Environment: `STORAGE_PROVIDER=local`*
-
-### 1. Inventory Media
-- [ ] **Upload:** Add a vehicle with multiple photos.
-- [ ] **Verify Storage:** Check `public/uploads/inventory/` for new files.
-- [ ] **Render:** View the vehicle in admin and public UI. Verify images load from `/uploads/inventory/<key>`.
-
-### 2. Private Documents
-- [ ] **Upload:** As a Customer, upload a document (PDF/JPG/PNG) to a deal.
-- [ ] **Verify Storage:** Check `storage/documents/` for new files.
-- [ ] **Retrieval:** As an Owner, view the document in the Deal detail page.
-- [ ] **Auth Protection:** Copy the document URL (e.g., `/api/documents/<id>`) and try to access it from an incognito window. Verify it returns `401 Unauthorized`.
-- [ ] **Replacement Cleanup:** Upload a second file to the same document slot. Verify the first file is deleted from `storage/documents/`.
+Use this checklist to verify storage behavior in **local** and **GCS** modes after deployment or config changes. Run manually; check each item that passes.
 
 ---
 
-## B. GCS Mode Smoke Tests
-*Environment: `STORAGE_PROVIDER=gcs`, `GCS_BUCKET_NAME=<bucket>`, `GCS_PROJECT_ID=<project>`*
+## A. Local mode (`STORAGE_PROVIDER=local` or unset)
 
-### 1. Inventory Media
-- [ ] **Upload:** Add a vehicle with multiple photos.
-- [ ] **Verify Storage:** Check GCS bucket under `inventory/` prefix.
-- [ ] **Render:** View the vehicle. Verify images load from `https://storage.googleapis.com/<bucket>/inventory/<key>`.
-- [ ] **Publicity:** Verify the object in GCS has public read access (if bucket-level public access is not enabled).
-
-### 2. Private Documents
-- [ ] **Upload:** Upload a document as a customer.
-- [ ] **Verify Storage:** Check GCS bucket under `documents/` prefix.
-- [ ] **Retrieval:** View via the route. Verify it streams correctly.
-- [ ] **Privacy:** Try to access the GCS object URL directly (e.g., `https://storage.googleapis.com/<bucket>/documents/<key>`). Verify it is **NOT** public.
-- [ ] **Replacement Cleanup:** Replace a document. Verify the old object is deleted from GCS.
+| # | Test | Steps | Pass |
+|---|------|--------|------|
+| A1 | Inventory upload | Create/edit a vehicle, add at least one photo, save. Confirm no server error. | ☐ |
+| A2 | Inventory render | View admin inventory list and public listing; vehicle thumbnail/primary image loads. | ☐ |
+| A3 | Document upload | As customer, upload a document (PDF/JPEG/PNG) for a deal. Confirm success. | ☐ |
+| A4 | Document retrieval | As same customer (or authorized owner), open document view and download/open the file. | ☐ |
+| A5 | Auth protection for documents | While logged out (or as different user without access), request `/api/documents/[id]` for a real document ID. Expect 401 or 403. | ☐ |
 
 ---
 
-## C. Legacy Compatibility Tests
-*These tests verify that old database values continue to resolve correctly.*
+## B. GCS mode (`STORAGE_PROVIDER=gcs`, `GCS_BUCKET_NAME` set)
 
-### 1. Media Legacy Shapes
-- [ ] **Full URL:** Manually update a `VehicleMedia.url` to `https://placehold.co/600x400.png`. Verify it renders correctly in the UI.
-- [ ] **Prefixed Local Path:** Update a `VehicleMedia.url` to `/uploads/inventory/test.jpg` (or `uploads/inventory/test.jpg`). Verify it resolves to the current provider's URL (e.g., `.../inventory/test.jpg`).
-- [ ] **Bare Key:** Update a `VehicleMedia.url` to `test.jpg`. Verify it resolves correctly.
+| # | Test | Steps | Pass |
+|---|------|--------|------|
+| B1 | Inventory upload | Create/edit a vehicle, add at least one photo, save. Confirm no server error. | ☐ |
+| B2 | Inventory render via public URL | View admin and public inventory; images load from GCS (e.g. `storage.googleapis.com/...`). | ☐ |
+| B3 | Document upload | As customer, upload a document for a deal. Confirm success. | ☐ |
+| B4 | Document retrieval through route | As authorized user, open document via app (not direct GCS URL). File streams correctly. | ☐ |
+| B5 | Private docs not directly public | Copy the document stream URL from the app; ensure the underlying GCS object is in a private path (e.g. `documents/`) and that bucket IAM does not allow public read on that prefix. Direct `https://storage.googleapis.com/.../documents/...` without app auth should fail or be inaccessible. | ☐ |
+| B6 | Public inventory readable | Confirm listed vehicles’ images are reachable (e.g. public URL or bucket has appropriate IAM/cors for inventory prefix). If design is “public read for inventory”, verify in browser. | ☐ |
 
-### 2. Document Legacy Shapes
-- [ ] **Prefixed Path:** Update a `DealDocument.fileUrl` to `documents/legacy-test.pdf`. Verify it can be retrieved via `/api/documents/<id>`.
-- [ ] **Bare Key:** Update a `DealDocument.fileUrl` to `legacy-test.pdf`. Verify it works.
+**Note:** GCS IAM and bucket CORS must be configured separately; this checklist does not assume they are correct.
 
 ---
 
-## D. Cleanup Verification
-- [ ] **Orphaned File Audit:** Delete a vehicle from the database. Note that storage files currently remain (known gap).
-- [ ] **Document Replace:** Verify that replacing a document removes the old file from storage (fixed in this pass).
+## C. Legacy compatibility
+
+Use DB or fixtures to set legacy values (or temporarily patch a row), then verify behavior.
+
+| # | Test | Setup | Expected | Pass |
+|---|------|--------|----------|------|
+| C1 | Media row — full URL | Set `VehicleMedia.url` to a full URL (e.g. `https://storage.googleapis.com/bucket/inventory/legacy.jpg`). | Image renders with that URL; no double-prefixing. | ☐ |
+| C2 | Media row — local path | Set `VehicleMedia.url` to `/uploads/inventory/foo.jpg` or `uploads/inventory/foo.jpg`. | Image resolves and displays (local: same path; GCS: provider builds URL from key `foo.jpg`). | ☐ |
+| C3 | Media row — bare key | Set `VehicleMedia.url` to a bare key (e.g. `uuid.jpg`). | Image loads via active provider’s public URL. | ☐ |
+| C4 | Document row — bare key | Ensure a `DealDocument.fileUrl` is a bare key (e.g. `uuid.pdf`). | Document retrieval streams the file. | ☐ |
+| C5 | Document row — prefixed legacy path | Set `DealDocument.fileUrl` to `documents/uuid.pdf` or `/documents/uuid.pdf`. | Document retrieval still streams (key normalized to bare key before provider read). | ☐ |
+
+---
+
+## Quick reference
+
+- **Public inventory:** Resolved via `getPublicUrl()` (used in `enrichVehicleMedia`). Legacy full URLs and paths supported.
+- **Private documents:** Served by `GET /api/documents/[id]`; uses `getReadStream(fileUrl)`. Legacy prefixed paths normalized to key.
+- **Cleanup:** Document replace deletes previous file. Vehicle/media delete does not yet remove storage files (see code comments in `src/actions/inventory.ts`).
