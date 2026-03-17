@@ -430,7 +430,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Drivetrain</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    value={field.value ?? ""}
+                    onValueChange={(value) => field.onChange(value || null)}
+                  >
                     <FormControl>
                       <SelectTrigger className={requiredFieldErrorClass("drivetrain", fieldState.invalid)}>
                         <SelectValue placeholder="Select drivetrain" />
@@ -636,7 +639,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Inventory Condition</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                    value={field.value ?? ""}
+                    onValueChange={(value) => field.onChange(value || null)}
+                  >
                       <FormControl>
                         <SelectTrigger className={requiredFieldErrorClass("condition", fieldState.invalid)}>
                           <SelectValue placeholder="Select condition" />
@@ -660,7 +666,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 render={({ field, fieldState }) => (
                   <FormItem>
                     <FormLabel>Title Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                    value={field.value ?? ""}
+                    onValueChange={(value) => field.onChange(value || null)}
+                  >
                       <FormControl>
                         <SelectTrigger className={requiredFieldErrorClass("titleStatus", fieldState.invalid)}>
                           <SelectValue placeholder="Select title status" />
