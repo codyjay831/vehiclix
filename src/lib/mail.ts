@@ -1,8 +1,5 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy_for_build");
-const FROM_ADDRESS = process.env.MAIL_FROM_ADDRESS || "noreply@vehiclix.com";
-
 /**
  * Mail service abstraction.
  * Sends real transactional emails via Resend.
@@ -18,9 +15,26 @@ export async function sendInviteEmail({
 }) {
   const subject = `Welcome to Vehiclix Beta — Action Required for ${dealershipName}`;
   
+  const apiKey = process.env.RESEND_API_KEY;
+  const fromAddress = process.env.MAIL_FROM_ADDRESS;
+
+  // 1. Validate configuration
+  if (!apiKey || apiKey === "re_dummy_for_build") {
+    console.error("[MAIL] Configuration error: RESEND_API_KEY is missing or invalid.");
+    return { success: false, error: "Email configuration error: RESEND_API_KEY is missing" };
+  }
+  
+  if (!fromAddress) {
+    console.error("[MAIL] Configuration error: MAIL_FROM_ADDRESS is missing.");
+    return { success: false, error: "Email configuration error: MAIL_FROM_ADDRESS is missing" };
+  }
+
+  const resend = new Resend(apiKey);
+  
   try {
+    console.log(`[MAIL] Attempting to send email to ${email} via Resend...`);
     const { data, error } = await resend.emails.send({
-      from: FROM_ADDRESS,
+      from: fromAddress,
       to: email,
       subject: subject,
       html: `
@@ -49,13 +63,14 @@ export async function sendInviteEmail({
     });
 
     if (error) {
-      console.error("Resend error:", error);
-      return { success: false, error: error.message };
+      console.error("[MAIL] Provider delivery failed:", error);
+      return { success: false, error: `Email delivery failed: ${error.message}` };
     }
 
+    console.log("[MAIL] Email sent successfully:", data?.id);
     return { success: true, data };
   } catch (err: any) {
-    console.error("Email sending failed:", err);
-    return { success: false, error: err.message || "Unknown error" };
+    console.error("[MAIL] Exception during send:", err);
+    return { success: false, error: `Email delivery failed: ${err.message || "Unknown error"}` };
   }
 }

@@ -134,11 +134,18 @@ export async function approveBetaRequestAction(requestId: string, slugOverride?:
   const inviteUrl = `${baseUrl}/setup-owner/${result.rawToken}`;
   
   console.log(`[APPROVE] Sending invite email to ${request.email}`);
-  const mailResult = await sendInviteEmail({
-    email: request.email,
-    dealershipName: request.dealershipName,
-    inviteUrl,
-  });
+  
+  let mailResult: { success: boolean; error?: string } = { success: false, error: "Unknown error" };
+  try {
+    mailResult = await sendInviteEmail({
+      email: request.email,
+      dealershipName: request.dealershipName,
+      inviteUrl,
+    });
+  } catch (e: any) {
+    console.error(`[APPROVE] sendInviteEmail crash: ${e.message}`);
+    mailResult = { success: false, error: e.message || "Failed to call email service" };
+  }
 
   if (mailResult.success) {
     console.log(`[APPROVE] Invite email sent successfully`);
@@ -229,11 +236,17 @@ export async function regenerateInviteAction(organizationId: string) {
   const inviteUrl = `${baseUrl}/setup-owner/${rawToken}`;
   
   console.log(`[REGENERATE] Sending new invite email to ${invite.email}`);
-  const mailResult = await sendInviteEmail({
-    email: invite.email,
-    dealershipName: org.name,
-    inviteUrl,
-  });
+  let mailResult: { success: boolean; error?: string } = { success: false, error: "Unknown error" };
+  try {
+    mailResult = await sendInviteEmail({
+      email: invite.email,
+      dealershipName: org.name,
+      inviteUrl,
+    });
+  } catch (e: any) {
+    console.error(`[REGENERATE] sendInviteEmail crash: ${e.message}`);
+    mailResult = { success: false, error: e.message || "Failed to call email service" };
+  }
 
   revalidatePath("/super-admin/requests");
   console.log(`[REGENERATE] Completed regeneration for org ${organizationId}`);
@@ -283,4 +296,30 @@ export async function getBetaRequestsAction() {
   return db.betaAccessRequest.findMany({
     orderBy: { createdAt: "desc" }
   });
+}
+
+/**
+ * Super Admin action to delete a beta request.
+ */
+export async function deleteBetaRequestAction(requestId: string) {
+  await requireWriteAccess();
+  const user = await getAuthenticatedUser();
+  if (!user || user.role !== Role.SUPER_ADMIN) {
+    throw new Error("Unauthorized: Super Admin access required.");
+  }
+
+  const request = await db.betaAccessRequest.findUnique({
+    where: { id: requestId }
+  });
+
+  if (!request) {
+    throw new Error("Request not found.");
+  }
+
+  await db.betaAccessRequest.delete({
+    where: { id: requestId }
+  });
+
+  revalidatePath("/super-admin/requests");
+  return { success: true };
 }

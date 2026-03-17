@@ -43,7 +43,8 @@ export type AuditEventType =
   | "document.rejected"
   | "support.session_started"
   | "support.session_ended"
-  | "support.action_attempted";
+  | "support.action_attempted"
+  | "user.deleted_by_admin";
 
 interface AuditLogOptions {
   eventType: AuditEventType;

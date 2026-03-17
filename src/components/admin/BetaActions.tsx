@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { approveBetaRequestAction, rejectBetaRequestAction, regenerateInviteAction } from "@/actions/beta";
+import { approveBetaRequestAction, rejectBetaRequestAction, regenerateInviteAction, deleteBetaRequestAction } from "@/actions/beta";
 import { startSupportSession } from "@/actions/support";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Check, X, Loader2, Copy, Send, RefreshCw, ExternalLink } from "lucide-react";
+import { Check, X, Loader2, Copy, Send, RefreshCw, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function BetaActions({ requestId, organizationId, status }: { requestId: string, organizationId?: string | null, status: string }) {
@@ -24,6 +24,7 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
   const [rejectReason, setRejectReason] = React.useState("");
   const [isRejectDialogOpen, setIsRejectDialogOpen] = React.useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = React.useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
   const [slugOverride, setSlugOverride] = React.useState("");
 
   const handleApprove = async () => {
@@ -37,7 +38,7 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
         if (result.emailSent) {
           toast.success("Approved and invite email sent!");
         } else {
-          toast.warning("Approved, but invite email failed to send. Please copy the link manually.");
+          toast.warning("Invite created. Email not sent. Copy link manually.");
         }
       }
     } catch (err: any) {
@@ -80,6 +81,19 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
     }
   };
 
+  const handleDelete = async () => {
+    setIsPending(true);
+    try {
+      await deleteBetaRequestAction(requestId);
+      setIsDeleteConfirmOpen(false);
+      toast.success("Request deleted.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete.");
+    } finally {
+      setIsPending(false);
+    }
+  };
+
   const copyInviteLink = () => {
     if (!inviteToken) return;
     const url = `${window.location.origin}/setup-owner/${inviteToken}`;
@@ -98,106 +112,158 @@ export function BetaActions({ requestId, organizationId, status }: { requestId: 
     );
   }
 
-  if (status === "APPROVED" && organizationId) {
+  if (status === "APPROVED") {
     return (
       <div className="flex items-center gap-2">
-        <form action={() => startSupportSession(organizationId)}>
-          <Button 
-            size="sm" 
-            variant="outline" 
-            className="h-8 text-[10px] font-black uppercase tracking-widest text-amber-600 border-amber-500/20 hover:bg-amber-50" 
-            disabled={isPending}
-          >
-            <ExternalLink className="h-3 w-3 mr-1" />
-            Support Dealership
-          </Button>
-        </form>
-        <Button 
-          size="sm" 
-          variant="ghost" 
-          className="h-8 text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/5" 
-          onClick={handleRegenerate}
-          disabled={isPending}
-        >
-          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-          Regenerate Invite
-        </Button>
+        {organizationId && (
+          <>
+            <form action={() => startSupportSession(organizationId)}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="h-8 text-[10px] font-black uppercase tracking-widest text-amber-600 border-amber-500/20 hover:bg-amber-50" 
+                disabled={isPending}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Support Dealership
+              </Button>
+            </form>
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className="h-8 text-[10px] font-black uppercase tracking-widest text-primary hover:bg-primary/5" 
+              onClick={handleRegenerate}
+              disabled={isPending}
+            >
+              {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+              Regenerate Invite
+            </Button>
+          </>
+        )}
+
+        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" disabled={isPending}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="font-black uppercase tracking-tight italic">Delete Request?</DialogTitle>
+              <DialogDescription className="font-medium italic">
+              This will permanently remove the beta request record.
+              {organizationId && " The linked organization and users will NOT be deleted."}
+            </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" className="rounded-full" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
+              <Button variant="destructive" className="rounded-full font-black uppercase tracking-widest" onClick={handleDelete} disabled={isPending}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Permanently Delete"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
 
-  if (status === "REJECTED" || status === "APPROVED") return null;
-
   return (
-    <div className="flex gap-2">
-      <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
+    <div className="flex gap-2 items-center">
+      {status === "PENDING" && (
+        <>
+          <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                size="sm" 
+                className="h-8 bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest text-[10px]"
+                disabled={isPending}
+              >
+                <Check className="h-3 w-3 mr-1" />
+                Approve
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-black uppercase tracking-tight italic">Approve Request</DialogTitle>
+                <DialogDescription className="font-medium italic">This will provision the organization and generate an owner invite.</DialogDescription>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Custom Slug (Optional)</Label>
+                  <Input 
+                    value={slugOverride} 
+                    onChange={(e) => setSlugOverride(e.target.value)} 
+                    placeholder="e.g. custom-dealership-name"
+                    className="h-12 rounded-2xl border-2"
+                  />
+                  <p className="text-[10px] text-muted-foreground italic">Leave blank to auto-generate from dealership name.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" className="rounded-full" onClick={() => setIsApproveDialogOpen(false)}>Cancel</Button>
+                <Button className="rounded-full bg-green-600 hover:bg-green-700 font-black uppercase tracking-widest" onClick={handleApprove} disabled={isPending}>
+                  {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Approval"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          
+          <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                size="sm" 
+                variant="destructive" 
+                className="h-8 font-black uppercase tracking-widest text-[10px]"
+                disabled={isPending}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Reject
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-black uppercase tracking-tight italic">Reject Request</DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Rejection Reason</Label>
+                  <Input 
+                    value={rejectReason} 
+                    onChange={(e) => setRejectReason(e.target.value)} 
+                    placeholder="e.g. Incomplete information" 
+                    className="h-12 rounded-2xl border-2"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" className="rounded-full" onClick={() => setIsRejectDialogOpen(false)}>Cancel</Button>
+                <Button variant="destructive" className="rounded-full font-black uppercase tracking-widest" onClick={handleReject} disabled={!rejectReason || isPending}>
+                  {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Rejection"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogTrigger asChild>
-          <Button 
-            size="sm" 
-            className="h-8 bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest text-[10px]"
-            disabled={isPending}
-          >
-            <Check className="h-3 w-3 mr-1" />
-            Approve
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" disabled={isPending}>
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-black uppercase tracking-tight italic">Approve Request</DialogTitle>
-            <DialogDescription className="font-medium italic">This will provision the organization and generate an owner invite.</DialogDescription>
+            <DialogTitle className="font-black uppercase tracking-tight italic">Delete Request?</DialogTitle>
+            <DialogDescription className="font-medium italic">
+            This will permanently remove the beta request record.
+            {organizationId && " The linked organization and users will NOT be deleted."}
+          </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Custom Slug (Optional)</Label>
-              <Input 
-                value={slugOverride} 
-                onChange={(e) => setSlugOverride(e.target.value)} 
-                placeholder="e.g. custom-dealership-name"
-                className="h-12 rounded-2xl border-2"
-              />
-              <p className="text-[10px] text-muted-foreground italic">Leave blank to auto-generate from dealership name.</p>
-            </div>
-          </div>
           <DialogFooter>
-            <Button variant="outline" className="rounded-full" onClick={() => setIsApproveDialogOpen(false)}>Cancel</Button>
-            <Button className="rounded-full bg-green-600 hover:bg-green-700 font-black uppercase tracking-widest" onClick={handleApprove} disabled={isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Approval"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      <Dialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
-        <DialogTrigger asChild>
-          <Button 
-            size="sm" 
-            variant="destructive" 
-            className="h-8 font-black uppercase tracking-widest text-[10px]"
-            disabled={isPending}
-          >
-            <X className="h-3 w-3 mr-1" />
-            Reject
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-black uppercase tracking-tight italic">Reject Request</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Rejection Reason</Label>
-              <Input 
-                value={rejectReason} 
-                onChange={(e) => setRejectReason(e.target.value)} 
-                placeholder="e.g. Incomplete information" 
-                className="h-12 rounded-2xl border-2"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-full" onClick={() => setIsRejectDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" className="rounded-full font-black uppercase tracking-widest" onClick={handleReject} disabled={!rejectReason || isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Rejection"}
+            <Button variant="outline" className="rounded-full" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" className="rounded-full font-black uppercase tracking-widest" onClick={handleDelete} disabled={isPending}>
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Permanently Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

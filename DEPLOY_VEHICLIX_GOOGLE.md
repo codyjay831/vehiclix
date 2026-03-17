@@ -18,6 +18,8 @@ This document provides instructions for deploying the Vehiclix platform to Googl
 | `ALLOW_MOCK_AUTH` | Secret | **MUST be "false" in production.** | **YES** |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Secret | Stable key for encrypting Server Action IDs. | **YES** |
 | `NEXT_DEPLOYMENT_ID` | Public | Unique ID for the current build (e.g., Git commit hash). | **YES** |
+| `RESEND_API_KEY` | Secret | API key for Resend (required for invite emails). | **YES** |
+| `MAIL_FROM_ADDRESS` | Public | Authorized sender email in Resend (e.g., `noreply@vehiclix.com`). | **YES** |
 | `DOCUSIGN_WEBHOOK_SECRET` | Secret | Signing secret for DocuSign webhooks. | Optional |
 
 ---
