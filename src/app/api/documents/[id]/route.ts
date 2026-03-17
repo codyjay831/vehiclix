@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getStorageProvider } from "@/lib/storage";
+import { getReadStream } from "@/lib/storage";
 import path from "path";
 
 /**
@@ -55,8 +55,7 @@ export async function GET(
   }
 
   try {
-    const provider = getStorageProvider();
-    const nodeStream = await provider.getReadStream(document.fileUrl);
+    const nodeStream = await getReadStream(document.fileUrl);
 
     // Convert NodeJS.Readable to Web ReadableStream for NextResponse
     const webStream = new ReadableStream({

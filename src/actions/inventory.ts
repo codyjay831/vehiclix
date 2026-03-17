@@ -15,6 +15,16 @@ import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
 
+/**
+ * STORAGE CLEANUP NOTE:
+ * Orphaned files can occur when:
+ * 1. A Vehicle is deleted (linked VehicleMedia records are deleted via DB CASCADE, but storage files remain)
+ * 2. Media management is added in the future and doesn't explicitly call storage.deleteFile()
+ * 
+ * TODO: Implement a background cleanup job or add explicit storage.deleteFile() calls 
+ * when a proper deleteVehicleAction is implemented.
+ */
+
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
 /**

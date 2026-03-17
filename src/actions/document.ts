@@ -10,7 +10,7 @@ import { DocumentStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
-import { saveFile } from "@/lib/storage";
+import { saveFile, deleteFile } from "@/lib/storage";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"];
@@ -52,6 +52,12 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
   // Save file to private storage
   const filename = await saveFile(file);
 
+  // Fetch current document to check for an existing file that needs cleanup
+  const existingDoc = await db.dealDocument.findUnique({
+    where: { id: documentId },
+    select: { fileUrl: true },
+  });
+
   // Update DealDocument record in a transaction
   await db.$transaction([
     db.dealDocument.update({
@@ -68,10 +74,19 @@ export async function uploadDocumentAction(dealId: string, documentId: string, f
         entityId: dealId,
         organizationId: deal.organizationId,
         actorRole: Role.CUSTOMER,
-        metadata: { documentId },
+        metadata: { documentId, replacedFile: !!existingDoc?.fileUrl },
       },
     }),
   ]);
+
+  // Clean up old file if it was replaced
+  if (existingDoc?.fileUrl) {
+    try {
+      await deleteFile(existingDoc.fileUrl);
+    } catch (error) {
+      console.warn(`Failed to cleanup orphaned document file: ${existingDoc.fileUrl}`, error);
+    }
+  }
 
   revalidatePath("/portal/documents");
   revalidatePath("/portal");
