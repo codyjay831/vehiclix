@@ -1,17 +1,17 @@
 import { SignJWT, jwtVerify } from "jose";
 import { Role } from "@prisma/client";
 
-const secretKey = process.env.AUTH_SECRET;
-if (!secretKey) {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("AUTH_SECRET is not set in production. Failing fast.");
+/** Lazy so build (e.g. Firebase App Hosting) can load this module without AUTH_SECRET at build time. */
+function getKey(): Uint8Array {
+  const secretKey = process.env.AUTH_SECRET;
+  if (!secretKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("AUTH_SECRET is not set in production. Failing fast.");
+    }
+    throw new Error("AUTH_SECRET is required but missing from environment variables.");
   }
-  // In dev, we can warn but let it continue with a dummy key if allowed, 
-  // but the prompt says "Do not silently allow insecure fallback behavior."
-  // So I'll just throw in all environments if it's missing.
-  throw new Error("AUTH_SECRET is required but missing from environment variables.");
+  return new TextEncoder().encode(secretKey);
 }
-const key = new TextEncoder().encode(secretKey);
 
 export type SessionPayload = {
   userId: string;
@@ -31,7 +31,7 @@ export async function encrypt(payload: SessionPayload) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(payload.expiresAt)
-    .sign(key);
+    .sign(getKey());
 }
 
 /**
@@ -40,7 +40,7 @@ export async function encrypt(payload: SessionPayload) {
 export async function decrypt(token: string | undefined): Promise<SessionPayload | null> {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, key, {
+    const { payload } = await jwtVerify(token, getKey(), {
       algorithms: ["HS256"],
     });
     return payload as SessionPayload;

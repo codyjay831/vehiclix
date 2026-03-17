@@ -16,6 +16,41 @@ import { hashToken } from "@/lib/crypto";
 import { sendInviteEmail } from "@/lib/mail";
 
 /**
+ * Public action: submit a beta access request from the marketing request-access page.
+ */
+export async function submitBetaRequestAction(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const dealershipName = String(formData.get("dealershipName") ?? "").trim();
+  const contactName = String(formData.get("contactName") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const phone = String(formData.get("phone") ?? "").trim();
+
+  if (!dealershipName || !contactName || !email || !phone) {
+    return { error: "All fields are required." };
+  }
+  if (email.length < 3 || !email.includes("@")) {
+    return { error: "Please enter a valid email address." };
+  }
+
+  try {
+    await db.betaAccessRequest.create({
+      data: {
+        dealershipName,
+        contactName,
+        email,
+        phone,
+        status: BetaAccessStatus.PENDING,
+      },
+    });
+    return {};
+  } catch (e) {
+    console.error("[submitBetaRequestAction]", e);
+    return { error: "Something went wrong. Please try again later." };
+  }
+}
+
+/**
  * Super Admin action to approve a beta request.
  * provisions organization and creates an invite token.
  */

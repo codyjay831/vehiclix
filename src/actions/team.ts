@@ -31,9 +31,10 @@ export async function createOrganizationUserAction(rawData: unknown) {
 
   const validation = UserSchema.safeParse(rawData);
   if (!validation.success) {
+    const first = validation.error.issues[0];
     return { 
       success: false, 
-      error: validation.error.errors[0].message 
+      error: first ? first.message : "Validation failed" 
     };
   }
 

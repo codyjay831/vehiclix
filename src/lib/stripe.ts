@@ -3,12 +3,23 @@ import { db } from "./db";
 import { SubscriptionStatus, PlanKey } from "@prisma/client";
 import { BILLING_PLANS } from "@/config/billing";
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error("STRIPE_SECRET_KEY is not defined");
+/** Lazy so build (e.g. Firebase App Hosting) can load this module without STRIPE_SECRET_KEY at build time. */
+function getStripe(): Stripe {
+  const secret = process.env.STRIPE_SECRET_KEY;
+  if (!secret) {
+    throw new Error("STRIPE_SECRET_KEY is not defined");
+  }
+  return new Stripe(secret, {
+    apiVersion: "2025-02-24-preview" as any,
+  });
 }
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-02-24-preview" as any,
+let _stripe: Stripe | undefined;
+export const stripe = new Proxy({} as Stripe, {
+  get(_, prop) {
+    if (!_stripe) _stripe = getStripe();
+    return (_stripe as any)[prop];
+  },
 });
 
 /**

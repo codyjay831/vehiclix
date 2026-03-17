@@ -164,7 +164,7 @@ export function AddUserModal({ isOpen, onClose, onSuccess }: AddUserModalProps) 
               </Label>
               <Select 
                 value={formData.role} 
-                onValueChange={(val: Role) => setFormData({ ...formData, role: val })}
+                onValueChange={(val) => { if (val === Role.OWNER || val === Role.STAFF) setFormData({ ...formData, role: val }); }}
               >
                 <SelectTrigger className="h-12 rounded-xl border-2 focus:border-primary transition-all font-bold text-sm italic">
                   <SelectValue />
