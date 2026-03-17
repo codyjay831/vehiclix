@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Readable } from "stream";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getReadStream } from "@/lib/storage";
@@ -56,18 +57,7 @@ export async function GET(
 
   try {
     const nodeStream = await getReadStream(document.fileUrl);
-
-    // Convert NodeJS.Readable to Web ReadableStream for NextResponse
-    const webStream = new ReadableStream({
-      start(controller) {
-        nodeStream.on("data", (chunk) => controller.enqueue(chunk));
-        nodeStream.on("end", () => controller.close());
-        nodeStream.on("error", (err) => controller.error(err));
-      },
-      cancel() {
-        nodeStream.destroy();
-      },
-    });
+    const webStream = Readable.toWeb(nodeStream);
 
     // Set appropriate headers based on file extension
     const ext = path.extname(document.fileUrl).toLowerCase();
@@ -76,7 +66,7 @@ export async function GET(
     else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
     else if (ext === ".png") contentType = "image/png";
 
-    return new NextResponse(webStream, {
+    return new NextResponse(webStream as BodyInit, {
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": `inline; filename="${document.documentType}${ext}"`,

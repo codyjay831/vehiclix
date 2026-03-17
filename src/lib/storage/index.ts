@@ -1,3 +1,4 @@
+import { Readable } from "stream";
 import { StorageProvider } from "./provider";
 import { LocalStorageProvider } from "./local-provider";
 import { GCSStorageProvider } from "./gcs-provider";
@@ -38,18 +39,25 @@ export async function saveFile(file: File, options?: { isPublic?: boolean }): Pr
 
 /**
  * Normalizes a storage key or URL for legacy compatibility.
- * Returns the bare key for local/GCS paths, or the original if it's a full URL.
+ * Supported legacy shapes (for reads):
+ * - Full URL: http(s)://... (e.g. https://storage.googleapis.com/bucket/inventory/foo.jpg) → returned as-is for display; not used for stream/delete.
+ * - Local public path: /uploads/inventory/foo.jpg or uploads/inventory/foo.jpg → bare key foo.jpg.
+ * - Prefixed key: inventory/foo.jpg or documents/foo.pdf → bare key.
+ * Canonical persisted format remains bare key (filename); this is for read-side compatibility only.
  */
 export function resolveStorageKey(pathOrUrl: string): { key: string; isFullUrl: boolean } {
-  if (!pathOrUrl) return { key: pathOrUrl, isFullUrl: false };
+  if (!pathOrUrl || typeof pathOrUrl !== "string") return { key: pathOrUrl ?? "", isFullUrl: false };
 
-  // 1. Full URLs (GCS, etc)
-  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
-    return { key: pathOrUrl, isFullUrl: true };
+  const trimmed = pathOrUrl.trim();
+  if (!trimmed) return { key: "", isFullUrl: false };
+
+  // 1. Full URLs (GCS, etc) — do not wrap again; return as-is for public URL; stream/delete no-op or throw
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return { key: trimmed, isFullUrl: true };
   }
 
   // 2. Normalize leading slash
-  let normalized = pathOrUrl.startsWith("/") ? pathOrUrl.slice(1) : pathOrUrl;
+  let normalized = trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
 
   // 3. Strip legacy prefixes to get the bare key
   const prefixes = ["uploads/inventory/", "inventory/", "documents/"];
@@ -64,27 +72,38 @@ export function resolveStorageKey(pathOrUrl: string): { key: string; isFullUrl: 
 }
 
 /**
- * Returns the public URL for a given storage key.
+ * Returns the public URL for a given storage key (or legacy path/URL).
+ * If the value is already a full URL, returns it unchanged. Empty key returns empty string.
  */
 export function getPublicUrl(key: string): string {
+  if (!key || typeof key !== "string") return "";
   const { key: resolvedKey, isFullUrl } = resolveStorageKey(key);
   if (isFullUrl) return resolvedKey;
+  if (!resolvedKey) return "";
   return getStorageProvider().getPublicUrl(resolvedKey);
 }
 
 /**
- * Returns a readable stream for a given storage key.
+ * Returns a readable stream for a given storage key (or legacy path).
+ * Legacy prefixed paths (e.g. documents/foo.pdf) are normalized to bare key before provider read.
+ * Full URLs are not streamable (throws).
  */
-export async function getReadStream(key: string): Promise<any> {
+export async function getReadStream(key: string): Promise<Readable> {
+  if (!key || typeof key !== "string") throw new Error("Storage key is required");
   const { key: resolvedKey, isFullUrl } = resolveStorageKey(key);
-  if (isFullUrl) {
-    throw new Error("Cannot stream from an external full URL");
-  }
+  if (isFullUrl) throw new Error("Cannot stream from an external full URL");
+  if (!resolvedKey) throw new Error("Storage key is required");
   return getStorageProvider().getReadStream(resolvedKey);
 }
+
+/**
+ * Deletes a file by storage key (or legacy path). No-op for full URLs or empty key.
+ */
 export async function deleteFile(key: string): Promise<void> {
+  if (!key || typeof key !== "string") return;
   const { key: resolvedKey, isFullUrl } = resolveStorageKey(key);
   if (isFullUrl) return; // Cannot delete external URLs
+  if (!resolvedKey) return;
   await getStorageProvider().delete(resolvedKey);
 }
 
