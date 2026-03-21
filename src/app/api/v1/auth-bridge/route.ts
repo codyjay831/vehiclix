@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
+import { getPublicOriginForRedirect } from "@/lib/request-public-origin";
 
 /**
  * Redirects to login with optional safe from param.
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   const sanitized = sanitizeReturnPath(returnUrl);
 
-  const loginUrl = new URL("/login", request.url);
+  const loginUrl = new URL("/login", getPublicOriginForRedirect(request));
   if (sanitized) {
     loginUrl.searchParams.set("from", sanitized);
   }

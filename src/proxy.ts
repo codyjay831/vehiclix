@@ -4,10 +4,12 @@ import { decrypt } from "@/lib/session";
 import { isPlatformHost } from "@/lib/domain-shared";
 import { BRANDING } from "@/config/branding";
 import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
+import { getPublicOriginForRedirect } from "@/lib/request-public-origin";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || "";
+  const publicOrigin = getPublicOriginForRedirect(request);
 
   // #region agent log
   const sessionToken = request.cookies.get("evo_session")?.value;
@@ -111,7 +113,7 @@ export async function proxy(request: NextRequest) {
           }
 
           if (newPathname !== pathname) {
-            const redirectUrl = new URL(newPathname, request.url);
+            const redirectUrl = new URL(newPathname, publicOrigin);
             // Preserve other searchParams except "org"
             request.nextUrl.searchParams.forEach((value, key) => {
               if (key !== "org") {
@@ -134,7 +136,7 @@ export async function proxy(request: NextRequest) {
   // 4. Super Admin Route Protection: /super-admin/*
   if (pathname.startsWith("/super-admin")) {
     if (!role) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/login", publicOrigin);
       loginUrl.searchParams.set("from", pathname);
       return NextResponse.redirect(loginUrl);
     }
@@ -147,7 +149,7 @@ export async function proxy(request: NextRequest) {
   // 5. Owner Route Protection: /admin/*
   if (pathname.startsWith("/admin")) {
     if (!role) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/login", publicOrigin);
       loginUrl.searchParams.set("from", pathname);
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'proxy.ts:adminNoRole',message:'redirect',data:{pathname,destination:loginUrl.toString(),reason:'admin_no_role'},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
@@ -167,7 +169,7 @@ export async function proxy(request: NextRequest) {
 
     // New: Check if 2FA is verified (Owners require 2FA, Support Mode bypasses it as SUPER_ADMIN already has their own session)
     if (role === "OWNER" && session && !session.isTwoFactorVerified) {
-      const verifyUrl = new URL("/login/verify-2fa", request.url);
+      const verifyUrl = new URL("/login/verify-2fa", publicOrigin);
       verifyUrl.searchParams.set("from", pathname);
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'proxy.ts:admin2FA',message:'redirect to 2fa',data:{pathname,destination:verifyUrl.toString(),reason:'admin_owner_2fa_not_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
@@ -182,7 +184,7 @@ export async function proxy(request: NextRequest) {
   // 5. Customer Route Protection: /portal/*
   if (pathname.startsWith("/portal")) {
     if (!role) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/login", publicOrigin);
       loginUrl.searchParams.set("from", pathname);
       return NextResponse.redirect(loginUrl);
     }
@@ -195,7 +197,7 @@ export async function proxy(request: NextRequest) {
   // 6. 2FA Page Protection
   if (pathname === "/login/verify-2fa") {
     if (!role) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL("/login", publicOrigin));
     }
 
     if (session?.isTwoFactorVerified) {
@@ -207,7 +209,7 @@ export async function proxy(request: NextRequest) {
             ? "/admin"
             : "/portal";
       const destPath = safeFrom ?? defaultByRole;
-      const dest = new URL(destPath, request.url);
+      const dest = new URL(destPath, publicOrigin);
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'proxy.ts:verify2faRedirect',message:'redirect from verify-2fa',data:{destPath,destination:dest.toString(),reason:'2fa_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
       // #endregion
