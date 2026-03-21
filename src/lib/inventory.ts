@@ -265,3 +265,34 @@ export async function getPublicVehicleDetail(organizationId: string, id: string)
 
   return enrichVehicleMedia(vehicle);
 }
+
+/**
+ * Fetches a single LISTED vehicle by slug (primary) or id (fallback), scoped to dealer.
+ * Canon: slug is primary public identity; use for API v1 catalog detail.
+ */
+export async function getPublicVehicleDetailBySlugOrId(
+  organizationId: string,
+  slugOrId: string
+): Promise<VehicleWithMedia | null> {
+  const whereBase = {
+    organizationId,
+    vehicleStatus: "LISTED" as VehicleStatus,
+  };
+  const include = {
+    media: { orderBy: { displayOrder: "asc" as const } },
+    organization: { select: { id: true, name: true, slug: true, phone: true } },
+    _count: { select: { inquiries: true } },
+  };
+
+  const bySlug = await db.vehicle.findFirst({
+    where: { ...whereBase, slug: slugOrId },
+    include,
+  });
+  if (bySlug) return enrichVehicleMedia(bySlug);
+
+  const byId = await db.vehicle.findFirst({
+    where: { ...whereBase, id: slugOrId },
+    include,
+  });
+  return enrichVehicleMedia(byId);
+}

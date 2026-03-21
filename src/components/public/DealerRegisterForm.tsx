@@ -9,9 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CarFront, ArrowRight, AlertCircle, Loader2, ShieldCheck } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
+import { usePathname } from "next/navigation";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 export function DealerRegisterForm() {
   const tenant = useTenant();
+  const pathname = usePathname();
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, setIsPending] = React.useState(false);
 
@@ -150,7 +153,7 @@ export function DealerRegisterForm() {
           <CardFooter className="bg-muted/30 border-t-2 border-primary/5 p-8 justify-center">
             <p className="text-xs font-bold text-muted-foreground italic">
               Already have an account?{" "}
-              <Link href="/login" className="text-primary hover:underline underline-offset-4 font-black uppercase tracking-widest ml-1">
+              <Link href={storefrontAuthBridgeHref(pathname || "/")} className="text-primary hover:underline underline-offset-4 font-black uppercase tracking-widest ml-1">
                 Sign In
               </Link>
             </p>

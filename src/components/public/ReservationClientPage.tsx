@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import { useForm } from "react-hook-form";
@@ -18,8 +17,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { initiateVehicleReservationAction } from "@/actions/payment";
 import { StripeReservationForm } from "@/components/public/StripeReservationForm";
+import {
+  postStorefrontPublicReservation,
+  reservationVehicleRefForPublicLead,
+} from "@/lib/api/storefront-reservations-client";
+import { toast } from "sonner";
 import { ChevronLeft, CarFront, ShieldCheck, AlertCircle, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -36,19 +39,18 @@ type ContactValues = z.infer<typeof contactSchema>;
 
 interface ReservationClientPageProps {
   vehicleId: string;
+  /** Public catalog slug when available (preferred for API vehicle reference). */
+  vehicleSlug?: string | null;
   dealerSlug: string;
-  organizationId: string;
   organizationName: string;
 }
 
-export function ReservationClientPage({ 
-  vehicleId, 
-  dealerSlug, 
-  organizationId,
-  organizationName 
+export function ReservationClientPage({
+  vehicleId,
+  vehicleSlug,
+  dealerSlug,
+  organizationName,
 }: ReservationClientPageProps) {
-  const router = useRouter();
-
   const [clientSecret, setClientSecret] = React.useState<string | null>(null);
   const [dealId, setDealId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<"VEHICLE_UNAVAILABLE" | "SERVER_ERROR" | null>(null);
@@ -68,22 +70,37 @@ export function ReservationClientPage({
     setIsInitiating(true);
     setError(null);
 
-    const result = await initiateVehicleReservationAction({
-      ...values,
-      vehicleId,
-      // Pass the organizationId from the trusted route context
-      organizationId,
-    });
+    try {
+      const vehicleRef = reservationVehicleRefForPublicLead({
+        id: vehicleId,
+        slug: vehicleSlug ?? null,
+      });
+      const result = await postStorefrontPublicReservation(
+        {
+          ...vehicleRef,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          email: values.email,
+          phone: values.phone,
+        },
+        dealerSlug
+      );
 
-    if (result.success && result.clientSecret && result.dealId) {
-      setClientSecret(result.clientSecret);
-      setDealId(result.dealId);
-    } else if (result.error) {
-      setError(result.error);
-    } else {
+      if (result.ok) {
+        setClientSecret(result.clientSecret);
+        setDealId(result.dealId);
+      } else if (result.vehicleUnavailable) {
+        setError("VEHICLE_UNAVAILABLE");
+      } else {
+        setError("SERVER_ERROR");
+        toast.error(result.message);
+      }
+    } catch {
       setError("SERVER_ERROR");
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setIsInitiating(false);
     }
-    setIsInitiating(false);
   };
 
   if (error === "VEHICLE_UNAVAILABLE") {

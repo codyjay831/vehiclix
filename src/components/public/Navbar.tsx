@@ -11,6 +11,7 @@ import { LogoutButton } from "@/components/auth/LogoutButton";
 import { useTenant } from "@/components/providers/TenantProvider";
 
 import { BRANDING } from "@/config/branding";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 interface NavbarProps {
   userRole?: Role | null;
@@ -81,7 +82,7 @@ export function Navbar({ userRole }: NavbarProps) {
             
             {/* Desktop Auth Section */}
             {(!userRole || (userRole !== Role.OWNER && userRole !== Role.CUSTOMER)) ? (
-              <Link href="/login">
+              <Link href={storefrontAuthBridgeHref(pathname || "/")}>
                 <Button variant="ghost" className="font-bold uppercase tracking-widest text-xs">
                   Login
                 </Button>
@@ -139,7 +140,7 @@ export function Navbar({ userRole }: NavbarProps) {
             <div className="pt-4 flex flex-col gap-4">
               {/* Mobile Auth Section */}
               {(!userRole || (userRole !== Role.OWNER && userRole !== Role.CUSTOMER)) ? (
-                <Link href="/login" onClick={() => setIsOpen(false)}>
+                <Link href={storefrontAuthBridgeHref(pathname || "/")} onClick={() => setIsOpen(false)}>
                   <Button variant="outline" className="w-full rounded-full h-12 font-bold uppercase tracking-widest">
                     Login
                   </Button>
@@ -161,7 +162,7 @@ export function Navbar({ userRole }: NavbarProps) {
                   </Button>
                 </Link>
               ) : (
-                <Link href="/login" onClick={() => setIsOpen(false)}>
+                <Link href={storefrontAuthBridgeHref(pathname || "/")} onClick={() => setIsOpen(false)}>
                   <Button className="w-full rounded-full h-12 font-black uppercase tracking-widest">
                     Get Started
                   </Button>

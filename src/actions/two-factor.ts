@@ -14,6 +14,7 @@ import { TOTP } from "otplib";
 const authenticator = new TOTP();
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
+import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -49,7 +50,6 @@ async function setVerifiedSessionCookie(session: { userId: string; role: Role; e
  */
 export async function verify2FAAction(formData: FormData) {
   const code = formData.get("code") as string;
-  const from = formData.get("from") as string || "/admin";
 
   if (!code || code.length !== 6) {
     return { error: "A 6-digit code is required" };
@@ -98,5 +98,12 @@ export async function verify2FAAction(formData: FormData) {
     organizationId: user.organizationId || undefined,
   });
 
-  redirect(from);
+  const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
+  const defaultRedirect =
+    user.role === Role.SUPER_ADMIN
+      ? "/super-admin"
+      : user.role === Role.OWNER || user.role === Role.STAFF
+        ? "/admin"
+        : "/portal";
+  redirect(safeFrom ?? defaultRedirect);
 }

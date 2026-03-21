@@ -10,7 +10,13 @@
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed",
     "db:seed:demo": "npx prisma db seed",
-    "validate:support-mode": "tsx scripts/enforce-support-mode.ts"
+    "validate:support-mode": "tsx scripts/enforce-support-mode.ts",
+    "guard:public-org-id": "tsx scripts/guards/no-client-organization-id-in-public-api.ts",
+    "guard:storefront-bypass": "tsx scripts/guards/storefront-api-bypass-report.ts",
+    "guard:public-vehicle-scope": "tsx scripts/guards/require-dealer-scoped-vehicle-resolution-in-public-api.ts",
+    "guard:slug-primary-catalog": "tsx scripts/guards/slug-primary-catalog-boundary.ts",
+    "guard:stripe-webhooks-report": "tsx scripts/guards/stripe-webhook-ownership-report.ts",
+    "guard:v1-drift": "npm run guard:public-org-id && npm run guard:public-vehicle-scope && npm run guard:slug-primary-catalog && npm run guard:storefront-bypass && npm run guard:stripe-webhooks-report"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

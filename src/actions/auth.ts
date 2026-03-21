@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/audit";
 import { getOrganizationById } from "@/lib/organization";
+import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -124,10 +125,10 @@ export async function loginAction(formData: FormData) {
       organizationId: user.organizationId || undefined,
     });
 
-    const from = formData.get("from") as string;
+    const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
     const baseUrl = process.env.APP_URL || "https://vehiclix.app";
     const verifyUrl = new URL("/login/verify-2fa", baseUrl);
-    if (from) verifyUrl.searchParams.set("from", from);
+    if (safeFrom) verifyUrl.searchParams.set("from", safeFrom);
     console.log("LOGIN STEP: redirecting to 2FA", verifyUrl.toString());
     redirect(`${verifyUrl.pathname}${verifyUrl.search}`);
   }
@@ -149,16 +150,16 @@ export async function loginAction(formData: FormData) {
     },
   });
 
-  const from = formData.get("from") as string;
+  const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
   const defaultRedirect = user.role === Role.SUPER_ADMIN 
     ? "/super-admin" 
     : user.role === Role.OWNER 
       ? "/admin" 
       : "/portal";
-  const redirectTarget = from || defaultRedirect;
+  const redirectTarget = safeFrom ?? defaultRedirect;
 
   // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'actions/auth.ts:loginRedirect',message:'post-login redirect',data:{userId:user.id,role:user.role,from,defaultRedirect,redirectTarget},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'actions/auth.ts:loginRedirect',message:'post-login redirect',data:{userId:user.id,role:user.role,fromRaw:formData.get("from"),defaultRedirect,redirectTarget},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
   // #endregion
 
   console.log("LOGIN STEP: redirecting to", redirectTarget);

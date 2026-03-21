@@ -14,6 +14,7 @@ import { getStorageProvider } from "@/lib/storage";
 import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
+import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
 
 /**
  * STORAGE CLEANUP GAP (documented — not fixed in this pass):
@@ -337,6 +338,18 @@ export async function createVehicleAction(formData: FormData) {
           },
         },
       },
+    });
+
+    const slug = await generateUniqueVehicleSlug(tx, user.organizationId!, {
+      id: vehicle.id,
+      year: vehicle.year,
+      make: vehicle.make,
+      model: vehicle.model,
+      trim: vehicle.trim,
+    });
+    await tx.vehicle.update({
+      where: { id: vehicle.id },
+      data: { slug },
     });
 
     // Create audit event

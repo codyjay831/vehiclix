@@ -24,10 +24,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { submitVehicleRequestAction } from "@/actions/request";
+import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, ArrowRight } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { postStorefrontPublicLead } from "@/lib/api/storefront-leads-client";
 
 const requestSchema = z.object({
   // Section 1: Vehicle Preferences
@@ -61,6 +63,7 @@ type RequestFormValues = z.infer<typeof requestSchema>;
 export function VehicleRequestForm() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const tenant = useTenant();
+  const router = useRouter();
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema) as any,
@@ -80,12 +83,38 @@ export function VehicleRequestForm() {
     if (!tenant) return;
     setIsSubmitting(true);
     try {
-      await submitVehicleRequestAction({
-        ...values,
-        organizationId: tenant.id,
-      });
-    } catch (error: any) {
-      console.error(error);
+      const result = await postStorefrontPublicLead(
+        {
+          type: "vehicle_request",
+          make: values.make,
+          model: values.model,
+          yearMin: values.yearMin,
+          yearMax: values.yearMax,
+          trim: values.trim,
+          mileageMax: values.mileageMax,
+          colorPrefs: values.colorPrefs,
+          features: values.features,
+          budgetMax: values.budgetMax,
+          timeline: values.timeline,
+          financingInterest: values.financingInterest,
+          tradeInInterest: values.tradeInInterest,
+          notes: values.notes,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          email: values.email,
+          phone: values.phone,
+        },
+        tenant.slug
+      );
+
+      if (result.ok) {
+        router.push("/request-vehicle/confirmation");
+        return;
+      }
+      toast.error(result.message);
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
       setIsSubmitting(false);
     }
   };

@@ -5,6 +5,7 @@ import { CarFront, Mail, Phone, MapPin, Instagram, Twitter, Linkedin } from "luc
 import { useTenant } from "@/components/providers/TenantProvider";
 
 import { BRANDING } from "@/config/branding";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 export function Footer() {
   const tenant = useTenant();
@@ -62,7 +63,7 @@ export function Footer() {
                 <ul className="space-y-4 text-sm font-bold uppercase tracking-tight">
                   <li><Link href={`/${tenant.slug}/about`} className="text-muted-foreground hover:text-primary transition-colors">About Us</Link></li>
                   <li><Link href={`/${tenant.slug}/contact`} className="text-muted-foreground hover:text-primary transition-colors">Contact</Link></li>
-                  <li><Link href="/login" className="text-muted-foreground hover:text-primary transition-colors">Customer Portal</Link></li>
+                  <li><Link href={storefrontAuthBridgeHref()} className="text-muted-foreground hover:text-primary transition-colors">Customer Portal</Link></li>
                 </ul>
               </div>
             </>
@@ -73,7 +74,7 @@ export function Footer() {
                 <ul className="space-y-4 text-sm font-bold uppercase tracking-tight">
                   <li><Link href="/#features" className="text-muted-foreground hover:text-primary transition-colors">Features</Link></li>
                   <li><Link href="/request-access" className="text-muted-foreground hover:text-primary transition-colors font-black text-primary italic">Request Access</Link></li>
-                  <li><Link href="/login" className="text-muted-foreground hover:text-primary transition-colors">Partner Login</Link></li>
+                  <li><Link href={storefrontAuthBridgeHref()} className="text-muted-foreground hover:text-primary transition-colors">Partner Login</Link></li>
                 </ul>
               </div>
               <div className="space-y-6">

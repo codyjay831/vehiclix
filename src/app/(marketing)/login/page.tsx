@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { CarFront, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 
 import { BRANDING } from "@/config/branding";
+import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
 
 export default function LoginPage() {
   return (
@@ -26,7 +27,8 @@ export default function LoginPage() {
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") || "";
+  /** Only safe same-origin paths are echoed into the form; server sanitizes again. */
+  const from = sanitizeReturnPath(searchParams.get("from")) ?? "";
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, setIsPending] = React.useState(false);
 

@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
-import { getOrganizationBySlug, getCanonicalUrl } from "@/lib/organization";
+import {
+  getCachedStorefrontPublicDealer,
+  dealerDtoToTenantBrandingHomepage,
+} from "@/lib/api/storefront-public";
 import { TenantProvider } from "@/components/providers/TenantProvider";
 import { Navbar } from "@/components/public/Navbar";
 import { Footer } from "@/components/public/Footer";
@@ -17,14 +20,14 @@ interface DealerLayoutProps {
  */
 export async function generateMetadata({ params }: DealerLayoutProps): Promise<Metadata> {
   const { dealerSlug } = await params;
-  const organization = await getOrganizationBySlug(dealerSlug);
+  const dealer = await getCachedStorefrontPublicDealer(dealerSlug);
 
-  if (!organization) {
+  if (!dealer) {
     return {};
   }
 
-  const dealerName = organization.name;
-  const canonical = getCanonicalUrl(organization);
+  const dealerName = dealer.name;
+  const canonical = dealer.canonicalBaseUrl;
 
   return {
     title: {
@@ -47,40 +50,25 @@ export default async function DealerLayout({
   params,
 }: DealerLayoutProps) {
   const { dealerSlug } = await params;
-  
-  const organization = await getOrganizationBySlug(dealerSlug);
 
-  if (!organization) {
+  const dealer = await getCachedStorefrontPublicDealer(dealerSlug);
+
+  if (!dealer) {
     return notFound();
-  }
-
-  // Suspended dealerships: show controlled message instead of storefront
-  if (organization.status === "SUSPENDED") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
-        <div className="max-w-md w-full rounded-2xl border-2 border-muted bg-card p-8 text-center shadow-xl">
-          <h1 className="text-2xl font-black uppercase tracking-tight">
-            Temporarily unavailable
-          </h1>
-          <p className="mt-4 text-muted-foreground">
-            This dealership&apos;s showroom is currently unavailable. Please check back later.
-          </p>
-        </div>
-      </div>
-    );
   }
 
   const user = await getAuthenticatedUser();
   const userRole = user?.role || null;
 
-  // Minimum safe tenant context for public display
+  const { branding, homepage } = dealerDtoToTenantBrandingHomepage(dealer);
+
   const tenant = {
-    id: organization.id,
-    name: organization.name,
-    slug: organization.slug,
-    phone: organization.phone,
-    branding: organization.branding,
-    homepage: organization.homepage,
+    id: dealer.id,
+    name: dealer.name,
+    slug: dealer.slug,
+    phone: dealer.phone,
+    branding,
+    homepage,
   };
 
   return (

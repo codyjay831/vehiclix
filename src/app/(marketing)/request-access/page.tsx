@@ -8,8 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { CarFront, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 export default function RequestAccessPage() {
+  const pathname = usePathname();
   const [isPending, setIsPending] = React.useState(false);
   const [success, setSuccess] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -115,7 +118,10 @@ export default function RequestAccessPage() {
         </Card>
         
         <p className="text-center text-xs text-muted-foreground font-bold italic">
-          Already have an account? <Link href="/login" className="text-primary hover:underline">Log in here</Link>
+          Already have an account?{" "}
+          <Link href={storefrontAuthBridgeHref(pathname || "/request-access")} className="text-primary hover:underline">
+            Log in here
+          </Link>
         </p>
       </div>
     </div>

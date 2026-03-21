@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, ArrowRight, Mail, LayoutDashboard, CarFront } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { BRANDING } from "@/config/branding";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 interface ConfirmationPageProps {
   params: Promise<{ dealId: string }>;
@@ -109,7 +110,7 @@ export default async function ReservationConfirmationPage({ params }: Confirmati
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full justify-center pt-4">
-          <Link href="/login" className="w-full sm:w-auto">
+          <Link href={storefrontAuthBridgeHref(`/reservation/${dealId}/confirmation`)} className="w-full sm:w-auto">
             <Button size="lg" className="w-full sm:w-auto h-16 px-12 rounded-full font-black uppercase tracking-widest shadow-xl group">
               Access My Portal
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />

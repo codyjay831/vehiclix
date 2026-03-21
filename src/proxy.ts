@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { decrypt } from "@/lib/session";
 import { isPlatformHost } from "@/lib/domain-shared";
 import { BRANDING } from "@/config/branding";
+import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -198,10 +199,17 @@ export async function proxy(request: NextRequest) {
     }
 
     if (session?.isTwoFactorVerified) {
-      const from = request.nextUrl.searchParams.get("from") || "/admin";
-      const dest = new URL(from, request.url);
+      const safeFrom = sanitizeReturnPath(request.nextUrl.searchParams.get("from"));
+      const defaultByRole =
+        role === "SUPER_ADMIN"
+          ? "/super-admin"
+          : role === "OWNER" || role === "STAFF"
+            ? "/admin"
+            : "/portal";
+      const destPath = safeFrom ?? defaultByRole;
+      const dest = new URL(destPath, request.url);
       // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'proxy.ts:verify2faRedirect',message:'redirect from verify-2fa',data:{from,destination:dest.toString(),reason:'2fa_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'proxy.ts:verify2faRedirect',message:'redirect from verify-2fa',data:{destPath,destination:dest.toString(),reason:'2fa_verified'},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
       // #endregion
       return NextResponse.redirect(dest);
     }

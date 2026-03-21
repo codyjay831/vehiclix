@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CarFront, ArrowRight, AlertCircle, Loader2, ShieldCheck } from "lucide-react";
+import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
 
 export default function Verify2FAPage() {
   return (
@@ -24,7 +25,8 @@ export default function Verify2FAPage() {
 
 function Verify2FAForm() {
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") || "/admin";
+  /** Invalid/missing `from` → empty; verify2FAAction applies role default. */
+  const from = sanitizeReturnPath(searchParams.get("from")) ?? "";
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, setIsPending] = React.useState(false);
 

@@ -36,8 +36,12 @@ interface VehicleRequestData {
 
 /**
  * Handles sourcing request submissions.
+ * When called from API (skipRedirect: true), returns without redirecting.
  */
-export async function submitVehicleRequestAction(data: VehicleRequestData) {
+export async function submitVehicleRequestAction(
+  data: VehicleRequestData,
+  options?: { skipRedirect?: boolean }
+) {
   const {
     organizationId,
     make,
@@ -143,6 +147,9 @@ export async function submitVehicleRequestAction(data: VehicleRequestData) {
     },
   });
 
+  if (options?.skipRedirect) {
+    return { success: true };
+  }
   redirect("/request-vehicle/confirmation");
 }
 

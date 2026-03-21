@@ -28,7 +28,11 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { submitInquiryAction } from "@/actions/inquiry";
+import {
+  inquiryVehicleRefForPublicLead,
+  postStorefrontPublicLead,
+} from "@/lib/api/storefront-leads-client";
+import { useTenant } from "@/components/providers/TenantProvider";
 import { CheckCircle2, Loader2, MessageSquare, Phone, Mail } from "lucide-react";
 
 const inquirySchema = z.object({
@@ -52,6 +56,7 @@ interface InquiryModalProps {
 }
 
 export function InquiryModal({ vehicle, open, onOpenChange }: InquiryModalProps) {
+  const tenant = useTenant();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
 
@@ -73,18 +78,31 @@ export function InquiryModal({ vehicle, open, onOpenChange }: InquiryModalProps)
   const onSubmit = async (values: InquiryFormValues) => {
     setIsSubmitting(true);
     try {
-      const result = await submitInquiryAction({
-        ...values,
-        vehicleId: vehicle.id,
-      });
+      const vehicleRef = inquiryVehicleRefForPublicLead(vehicle);
+      const result = await postStorefrontPublicLead(
+        {
+          type: "inquiry",
+          ...vehicleRef,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          email: values.email,
+          phone: values.phone,
+          preferredContact: values.preferredContact,
+          message: values.message,
+          tradeInInterest: values.tradeInInterest,
+          financingInterest: values.financingInterest,
+          honeypot: values.honeypot,
+        },
+        tenant?.slug
+      );
 
-      if (result.success) {
+      if (result.ok) {
         setIsSuccess(true);
         form.reset();
       } else {
-        toast.error("Something went wrong. Please try again.");
+        toast.error(result.message);
       }
-    } catch (error: any) {
+    } catch {
       toast.error("Something went wrong. Please try again.");
     } finally {
       setIsSubmitting(false);

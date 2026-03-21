@@ -6,6 +6,7 @@ import { Footer } from "@/components/public/Footer";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { Metadata } from "next";
 import { BRANDING } from "@/config/branding";
+import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
 
 export const metadata: Metadata = {
   title: "Modern Dealership Operating System",
@@ -41,7 +42,7 @@ export default async function RootLandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
-            <Link href="/login">
+            <Link href={storefrontAuthBridgeHref("/")}>
               <Button size="lg" className="h-16 px-12 rounded-full font-black uppercase tracking-widest shadow-xl group">
                 Get Started
                 <ShieldCheck className="ml-2 h-5 w-5 group-hover:scale-110 transition-transform" />

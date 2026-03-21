@@ -152,6 +152,8 @@ model Vehicle {
   updatedAt            DateTime           @updatedAt
   condition            InventoryCondition
   organizationId       String
+  /** Public identity for catalog/VDP; unique per organization. Backfilled for existing rows. */
+  slug                 String?
   shares               Int                @default(0)
   views                Int                @default(0)
   deals                Deal[]
@@ -162,6 +164,7 @@ model Vehicle {
   inquiries            VehicleInquiry[]
   media                VehicleMedia[]
 
+  @@unique([organizationId, slug])
   @@index([vehicleStatus])
   @@index([organizationId])
 }
