@@ -14,7 +14,7 @@ const migrationsDir = path.join(root, "prisma", "migrations");
 
 function parseSchemaEnums(text: string): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
-  const re = /enum\s+(\w+)\s*\{([^}]*)\}/gs;
+  const re = /enum\s+(\w+)\s*\{([^}]*)\}/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const name = m[1];
