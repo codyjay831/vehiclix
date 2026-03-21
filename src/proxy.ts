@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { decrypt } from "@/lib/session";
 import { isPlatformHost } from "@/lib/domain-shared";
 import { BRANDING } from "@/config/branding";
-import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
+import { effectivePostLoginReturnPath } from "@/lib/api/auth-bridge-utils";
 import { getPublicOriginForRedirect } from "@/lib/request-public-origin";
 
 export async function proxy(request: NextRequest) {
@@ -201,7 +201,7 @@ export async function proxy(request: NextRequest) {
     }
 
     if (session?.isTwoFactorVerified) {
-      const safeFrom = sanitizeReturnPath(request.nextUrl.searchParams.get("from"));
+      const safeFrom = effectivePostLoginReturnPath(request.nextUrl.searchParams.get("from"));
       const defaultByRole =
         role === "SUPER_ADMIN"
           ? "/super-admin"

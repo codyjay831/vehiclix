@@ -22,3 +22,14 @@ export function sanitizeReturnPath(input: string | null | undefined): string | n
   if (trimmed.startsWith("//")) return null;
   return trimmed;
 }
+
+/**
+ * Return path safe to honor after login: sanitized, not home, not auth pages.
+ * "/" and "/login…" are treated as unspecified so callers can apply role defaults.
+ */
+export function effectivePostLoginReturnPath(input: string | null | undefined): string | null {
+  const sanitized = sanitizeReturnPath(input);
+  if (sanitized == null) return null;
+  if (sanitized === "/" || sanitized.startsWith("/login")) return null;
+  return sanitized;
+}

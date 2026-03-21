@@ -6,8 +6,10 @@ This document provides instructions for deploying the Vehiclix platform to Googl
 
 | Variable | Type | Purpose | Launch Req? |
 |----------|------|---------|-------------|
-| `DATABASE_URL` | Secret | Connection string for your production PostgreSQL. | **YES** |
-| `DIRECT_URL` | Secret | Required for Prisma migrations during build. | **YES** |
+| `DATABASE_URL` | Secret | PostgreSQL URL for **local dev**, **Prisma CLI** (`migrate`, `studio`), and **optional** build-time tools. Not used at **runtime** when the Cloud SQL connector is enabled. | **YES** (for CLI/dev) |
+| `USE_CLOUD_SQL_CONNECTOR` | Secret/Public | Set to `true` in **production runtime** to connect via `@google-cloud/cloud-sql-connector` (private IP) instead of `DATABASE_URL`. Omit or not `true` locally. | **YES** (prod runtime) |
+| `DB_PASSWORD` | Secret | Postgres password when `USE_CLOUD_SQL_CONNECTOR=true` (runtime). Do not embed in `DATABASE_URL` for that mode. | **YES** (with connector) |
+| `DIRECT_URL` | Secret | Legacy/doc name; this repo’s Prisma 7 config uses `DATABASE_URL` only for CLI. Safe to align with `DATABASE_URL` if you use a direct URL for migrations. | Optional |
 | `AUTH_SECRET` | Secret | Random string for signing session JWTs. | **YES** |
 | `STRIPE_SECRET_KEY` | Secret | Your production Stripe secret key. | **YES** |
 | `STRIPE_WEBHOOK_SECRET` | Secret | Signing secret for Stripe webhooks. | **YES** |
@@ -78,6 +80,6 @@ The current implementation saves photos to `public/uploads` and documents to `st
 ## 6. Rollback & Troubleshooting
 
 - **Build Failure**: Check the Firebase App Hosting logs. Common cause: missing secrets in the console.
-- **Database Error**: Ensure `DIRECT_URL` is set correctly for migrations.
+- **Database Error**: For Prisma CLI/migrations, ensure `DATABASE_URL` points at a reachable Postgres URL. For production **runtime** with the connector, set `USE_CLOUD_SQL_CONNECTOR=true` and `DB_PASSWORD`; avoid enabling the connector during `next build` unless the build environment has Cloud SQL Admin API access and VPC reachability (prefer runtime-only connector secrets).
 - **Redirect Loop**: Check `APP_URL` matches the accessing domain exactly.
 - **Rollback**: Use the Firebase Console to redeploy a previous successful build.

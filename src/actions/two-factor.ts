@@ -14,7 +14,7 @@ import { TOTP } from "otplib";
 const authenticator = new TOTP();
 import { logAuditEvent } from "@/lib/audit";
 import { Role } from "@prisma/client";
-import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
+import { effectivePostLoginReturnPath } from "@/lib/api/auth-bridge-utils";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -98,7 +98,7 @@ export async function verify2FAAction(formData: FormData) {
     organizationId: user.organizationId || undefined,
   });
 
-  const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
+  const safeFrom = effectivePostLoginReturnPath(formData.get("from") as string | null);
   const defaultRedirect =
     user.role === Role.SUPER_ADMIN
       ? "/super-admin"

@@ -13,7 +13,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/audit";
 import { getOrganizationById } from "@/lib/organization";
-import { sanitizeReturnPath } from "@/lib/api/auth-bridge-utils";
+import { effectivePostLoginReturnPath } from "@/lib/api/auth-bridge-utils";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -125,7 +125,7 @@ export async function loginAction(formData: FormData) {
       organizationId: user.organizationId || undefined,
     });
 
-    const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
+    const safeFrom = effectivePostLoginReturnPath(formData.get("from") as string | null);
     const baseUrl = process.env.APP_URL || "https://vehiclix.app";
     const verifyUrl = new URL("/login/verify-2fa", baseUrl);
     if (safeFrom) verifyUrl.searchParams.set("from", safeFrom);
@@ -150,12 +150,13 @@ export async function loginAction(formData: FormData) {
     },
   });
 
-  const safeFrom = sanitizeReturnPath(formData.get("from") as string | null);
-  const defaultRedirect = user.role === Role.SUPER_ADMIN 
-    ? "/super-admin" 
-    : user.role === Role.OWNER 
-      ? "/admin" 
-      : "/portal";
+  const safeFrom = effectivePostLoginReturnPath(formData.get("from") as string | null);
+  const defaultRedirect =
+    user.role === Role.SUPER_ADMIN
+      ? "/super-admin"
+      : user.role === Role.OWNER || user.role === Role.STAFF
+        ? "/admin"
+        : "/portal";
   const redirectTarget = safeFrom ?? defaultRedirect;
 
   // #region agent log
