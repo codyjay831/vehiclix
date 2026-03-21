@@ -1,0 +1,5 @@
+runConfig:
+  vpcAccess:
+    egress: PRIVATE_RANGES_ONLY
+    networkInterfaces:
+      - network: default
