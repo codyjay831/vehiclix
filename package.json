@@ -16,6 +16,7 @@
     "guard:public-vehicle-scope": "tsx scripts/guards/require-dealer-scoped-vehicle-resolution-in-public-api.ts",
     "guard:slug-primary-catalog": "tsx scripts/guards/slug-primary-catalog-boundary.ts",
     "guard:stripe-webhooks-report": "tsx scripts/guards/stripe-webhook-ownership-report.ts",
+    "guard:prisma-enum-sync": "tsx scripts/guards/prisma-enum-migrations-sync.ts",
     "guard:v1-drift": "npm run guard:public-org-id && npm run guard:public-vehicle-scope && npm run guard:slug-primary-catalog && npm run guard:storefront-bypass && npm run guard:stripe-webhooks-report"
   },
   "prisma": {

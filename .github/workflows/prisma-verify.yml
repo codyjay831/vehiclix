@@ -39,6 +39,9 @@ jobs:
       - name: Prisma validate
         run: npx prisma validate
 
+      - name: Verify migration SQL enums match schema.prisma
+        run: npm run guard:prisma-enum-sync
+
       - name: Prisma generate
         run: npx prisma generate
 
