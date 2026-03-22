@@ -11,6 +11,7 @@ import { CarFront, ArrowRight, AlertCircle, Loader2, ShieldCheck } from "lucide-
 import { useTenant } from "@/components/providers/TenantProvider";
 import { usePathname } from "next/navigation";
 import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR } from "@/lib/auth/password";
 
 export function DealerRegisterForm() {
   const tenant = useTenant();
@@ -121,10 +122,10 @@ export function DealerRegisterForm() {
                   type="password"
                   placeholder="••••••••"
                   required
-                  minLength={8}
+                  minLength={MIN_PASSWORD_LENGTH}
                   className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20"
                 />
-                <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest ml-1">Minimum 8 characters required</p>
+                <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest ml-1">{PASSWORD_MIN_ERROR}</p>
               </div>
 
               {error && (

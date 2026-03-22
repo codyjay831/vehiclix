@@ -7,10 +7,11 @@ import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR } from "@/lib/auth/password";
 
 const UserSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   role: z.enum([Role.OWNER, Role.STAFF]),
@@ -91,11 +92,26 @@ export async function updateOrganizationUserRoleAction(userId: string, newRole: 
 
   const userToUpdate = await db.user.findUnique({
     where: { id: userId },
-    select: { organizationId: true },
+    select: { organizationId: true, role: true },
   });
 
   if (!userToUpdate || userToUpdate.organizationId !== currentUser.organizationId) {
     return { success: false, error: "User not found in your organization" };
+  }
+
+  if (
+    userToUpdate.role === Role.OWNER &&
+    newRole === Role.STAFF
+  ) {
+    const ownerCount = await db.user.count({
+      where: {
+        organizationId: currentUser.organizationId,
+        role: Role.OWNER,
+      },
+    });
+    if (ownerCount <= 1) {
+      return { success: false, error: "Cannot demote the last owner." };
+    }
   }
 
   await db.user.update({
@@ -126,15 +142,24 @@ export async function deleteOrganizationUserAction(userId: string) {
 
   const userToDelete = await db.user.findUnique({
     where: { id: userId },
-    select: { organizationId: true },
+    select: { organizationId: true, role: true },
   });
 
   if (!userToDelete || userToDelete.organizationId !== currentUser.organizationId) {
     return { success: false, error: "User not found in your organization" };
   }
 
-  // Check if this is the last owner? 
-  // (Optional, but let's stick to minimal for now as per instructions)
+  if (userToDelete.role === Role.OWNER) {
+    const ownerCount = await db.user.count({
+      where: {
+        organizationId: currentUser.organizationId,
+        role: Role.OWNER,
+      },
+    });
+    if (ownerCount <= 1) {
+      return { success: false, error: "Cannot remove the last owner from the organization." };
+    }
+  }
 
   await db.user.delete({
     where: { id: userId },

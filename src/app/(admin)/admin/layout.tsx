@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, CarFront, MessageSquare, FileText, LogOut, Menu, Settings, Users, ShieldAlert, KeyRound } from "lucide-react";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
@@ -77,6 +77,7 @@ export default async function AdminLayout({
     { label: "Inventory", href: "/admin/inventory", icon: CarFront },
     { label: "Inquiries", href: "/admin/inquiries", icon: MessageSquare },
     { label: "Deals", href: "/admin/deals", icon: FileText },
+    { label: "Account", href: "/admin/account", icon: KeyRound },
     { label: "Settings", href: "/admin/settings", icon: Settings },
   ];
 

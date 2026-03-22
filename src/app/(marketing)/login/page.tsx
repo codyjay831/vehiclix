@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CarFront, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { CarFront, ArrowRight, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 
 import { BRANDING } from "@/config/branding";
 import { effectivePostLoginReturnPath } from "@/lib/api/auth-bridge-utils";
@@ -29,6 +29,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   /** Only safe same-origin paths are echoed into the form; server sanitizes again. */
   const from = effectivePostLoginReturnPath(searchParams.get("from")) ?? "";
+  const passwordResetOk = searchParams.get("passwordReset") === "success";
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, setIsPending] = React.useState(false);
 
@@ -83,9 +84,24 @@ function LoginForm() {
                   className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20"
                 />
               </div>
+              {passwordResetOk && (
+                <div className="bg-primary/5 border-2 border-primary/10 p-4 rounded-2xl flex items-center gap-3 text-primary animate-in fade-in duration-500">
+                  <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-tight leading-snug">
+                    Your password was reset. Sign in with your new password.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Password</Label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-[10px] font-black uppercase tracking-widest text-primary hover:opacity-80 transition-opacity"
+                  >
+                    Forgot password?
+                  </Link>
                 </div>
                 <Input
                   id="password"

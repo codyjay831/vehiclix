@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ShieldCheck, AlertCircle, Loader2, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR } from "@/lib/auth/password";
 
 export default function SetupOwnerPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = React.use(params);
@@ -71,7 +72,17 @@ export default function SetupOwnerPage({ params }: { params: Promise<{ token: st
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Set Password</Label>
-                <Input id="password" name="password" type="password" placeholder="••••••••" required className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20" />
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="••••••••"
+                  required
+                  minLength={MIN_PASSWORD_LENGTH}
+                  autoComplete="new-password"
+                  className="h-12 rounded-2xl border-2 focus-visible:ring-primary/20"
+                />
+                <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest ml-1">{PASSWORD_MIN_ERROR}</p>
               </div>
 
               {error && (

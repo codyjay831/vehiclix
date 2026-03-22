@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 async function createPrismaClient(): Promise<PrismaClient> {
-  if (globalForPrisma.prisma) {
+  if (process.env.NODE_ENV === "production" && globalForPrisma.prisma) {
     return globalForPrisma.prisma;
   }
 
@@ -50,7 +50,7 @@ async function createPrismaClient(): Promise<PrismaClient> {
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "production") {
     globalForPrisma.prisma = client;
   }
 

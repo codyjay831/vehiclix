@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Role } from "@prisma/client";
 import { createOrganizationUserAction } from "@/actions/team";
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR } from "@/lib/auth/password";
 import { toast } from "sonner";
 import { Loader2, ShieldCheck, Mail, Lock, UserCircle, UserPlus } from "lucide-react";
 
@@ -151,9 +152,11 @@ export function AddUserModal({ isOpen, onClose, onSuccess }: AddUserModalProps) 
                 placeholder="••••••••"
                 className="h-12 rounded-xl border-2 focus:border-primary transition-all font-bold text-sm"
                 required
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
               />
               <p className="text-[9px] font-medium text-muted-foreground italic px-1">
-                At least 8 characters long.
+                {PASSWORD_MIN_ERROR}
               </p>
             </div>
 

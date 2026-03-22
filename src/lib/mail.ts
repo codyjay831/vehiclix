@@ -74,3 +74,63 @@ export async function sendInviteEmail({
     return { success: false, error: `Email delivery failed: ${err.message || "Unknown error"}` };
   }
 }
+
+export async function sendPasswordResetEmail({
+  email,
+  resetUrl,
+}: {
+  email: string;
+  resetUrl: string;
+}) {
+  const subject = "Reset your password";
+
+  const apiKey = process.env.RESEND_API_KEY;
+  const fromAddress = process.env.MAIL_FROM_ADDRESS;
+
+  if (!apiKey || apiKey === "re_dummy_for_build") {
+    console.error("[MAIL] Configuration error: RESEND_API_KEY is missing or invalid.");
+    return { success: false, error: "Email configuration error: RESEND_API_KEY is missing" };
+  }
+
+  if (!fromAddress) {
+    console.error("[MAIL] Configuration error: MAIL_FROM_ADDRESS is missing.");
+    return { success: false, error: "Email configuration error: MAIL_FROM_ADDRESS is missing" };
+  }
+
+  const resend = new Resend(apiKey);
+
+  try {
+    console.log(`[MAIL] Password reset email to ${email}`);
+    const { data, error } = await resend.emails.send({
+      from: fromAddress,
+      to: email,
+      subject,
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee;">
+          <h1 style="color: #1A1A1A;">Vehiclix</h1>
+          <p style="font-size: 16px; color: #4A4A4A; line-height: 1.5;">We received a request to reset your password.</p>
+          <p style="font-size: 16px; color: #4A4A4A; line-height: 1.5;">Click the link below to choose a new password. This link expires in 1 hour.</p>
+          <div style="margin: 30px 0;">
+            <a href="${resetUrl}" style="background-color: #1A1A1A; color: white; padding: 12px 24px; border-radius: 9999px; text-decoration: none; font-weight: bold; display: inline-block; font-size: 12px; letter-spacing: 0.05em;">
+              Reset password
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #999;">If you did not request this, you can ignore this email.</p>
+          <p style="font-size: 12px; color: #999;">&mdash; The Vehiclix Team</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      console.error("[MAIL] Password reset delivery failed:", error);
+      return { success: false, error: `Email delivery failed: ${error.message}` };
+    }
+
+    console.log("[MAIL] Password reset email sent:", data?.id);
+    return { success: true, data };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[MAIL] Password reset exception:", err);
+    return { success: false, error: `Email delivery failed: ${message}` };
+  }
+}

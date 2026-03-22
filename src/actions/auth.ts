@@ -14,6 +14,9 @@ import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/audit";
 import { getOrganizationById } from "@/lib/organization";
 import { effectivePostLoginReturnPath } from "@/lib/api/auth-bridge-utils";
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_ERROR } from "@/lib/auth/password";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { requireWriteAccess } from "@/lib/support";
 
 const SESSION_COOKIE_NAME = "evo_session";
 
@@ -183,6 +186,10 @@ export async function registerAction(formData: FormData) {
     return { error: "Required fields are missing" };
   }
 
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: PASSWORD_MIN_ERROR };
+  }
+
   const existingUser = await db.user.findUnique({
     where: { email },
   });
@@ -297,6 +304,57 @@ export async function logoutAction() {
 }
 
 /**
+ * Logged-in user changes their own password (current password required).
+ */
+export async function changePasswordAction(
+  formData: FormData
+): Promise<{ success: true } | { error: string }> {
+  try {
+    await requireWriteAccess();
+  } catch {
+    return { error: "You cannot change your password while in support preview mode." };
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return { error: "Authentication required." };
+  }
+
+  if (!user.passwordHash) {
+    return { error: "Password change is not available for this account." };
+  }
+
+  const currentPassword = formData.get("currentPassword") as string | null;
+  const newPassword = formData.get("newPassword") as string | null;
+  const confirmPassword = formData.get("confirmPassword") as string | null;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return { error: "All fields are required." };
+  }
+
+  if (newPassword !== confirmPassword) {
+    return { error: "Passwords do not match." };
+  }
+
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { error: PASSWORD_MIN_ERROR };
+  }
+
+  const currentOk = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!currentOk) {
+    return { error: "Current password is incorrect." };
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash },
+  });
+
+  return { success: true };
+}
+
+/**
  * Public action to fetch basic organization info for registration/branding.
  */
 export async function getOrganizationInfoAction(id: string) {
@@ -321,6 +379,10 @@ export async function claimOwnerAccountAction(formData: FormData) {
 
   if (!token || !firstName || !lastName || !password) {
     return { error: "Required fields are missing." };
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { error: PASSWORD_MIN_ERROR };
   }
 
   const tokenHash = hashToken(token);

@@ -77,6 +77,12 @@ export default async function PortalLayout({
                 >
                   Documents
                 </Link>
+                <Link
+                  href="/portal/account"
+                  className="text-xs font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors"
+                >
+                  Account
+                </Link>
               </nav>
             </div>
 
