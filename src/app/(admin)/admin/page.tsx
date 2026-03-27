@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { CarFront, FileText, LayoutDashboard, Settings, MessageSquare, AlertCircle, Info } from "lucide-react";
+import { CarFront, FileText, LayoutDashboard, Settings, MessageSquare, ClipboardList, AlertCircle, Info } from "lucide-react";
 
 export default function AdminPage() {
   const stats = [
     { label: "Inventory", value: "Manage", icon: CarFront, href: "/admin/inventory", color: "text-blue-600" },
     { label: "Inquiries", value: "View", icon: MessageSquare, href: "/admin/inquiries", color: "text-green-600" },
+    { label: "Requests", value: "Review", icon: ClipboardList, href: "/admin/requests", color: "text-amber-600" },
     { label: "Deals", value: "Track", icon: FileText, href: "/admin/deals", color: "text-purple-600" },
   ];
 
