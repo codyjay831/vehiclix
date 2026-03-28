@@ -93,7 +93,10 @@ async function ensurePdfJsNodePolyfills(): Promise<void> {
 
 /**
  * pdf.js Node path uses a "fake worker" that dynamic-imports workerSrc. Default `./pdf.worker.mjs`
- * resolves next to pdf.mjs; standalone traces can omit that file — use an absolute file URL.
+ * resolves next to pdf.mjs; standalone traces can omit that file — use an absolute file URL in production.
+ *
+ * In `next dev`, Turbopack rewrites `require.resolve("pdfjs-dist/...")` in app code to a virtual label string,
+ * so `pathToFileURL` produces a bogus `file:` URL. Skip the override in development; pdf.js default works locally.
  */
 function setPdfJsWorkerSrcAbsolute(pdfParseMod: typeof import("pdf-parse")): void {
   const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
@@ -103,7 +106,9 @@ function setPdfJsWorkerSrcAbsolute(pdfParseMod: typeof import("pdf-parse")): voi
 export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   await ensurePdfJsNodePolyfills();
   const pdfParseMod = await import("pdf-parse");
-  setPdfJsWorkerSrcAbsolute(pdfParseMod);
+  if (process.env.NODE_ENV === "production") {
+    setPdfJsWorkerSrcAbsolute(pdfParseMod);
+  }
   const { PDFParse } = pdfParseMod;
   const parser = new PDFParse({ data: buffer });
   try {
