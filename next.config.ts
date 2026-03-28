@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", "@google-cloud/cloud-sql-connector"],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
+  serverExternalPackages: [
+    "@prisma/client",
+    "@google-cloud/cloud-sql-connector",
+    "pdf-parse",
+    "tesseract.js",
+  ],
   deploymentId: process.env.NEXT_DEPLOYMENT_ID || undefined,
   images: {
     remotePatterns: [

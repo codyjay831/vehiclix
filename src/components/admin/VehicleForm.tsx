@@ -41,7 +41,72 @@ import { toast } from "sonner";
 import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
 import { cn } from "@/lib/utils";
 import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle } from "lucide-react";
-import { decodeVin } from "@/lib/vin";
+import { decodeVin, type VinMetadata } from "@/lib/vin";
+import { applyVinMetadataToVehicleForm } from "@/lib/vehicle-vin-form-merge";
+import {
+  applyIntakeAiWithDeferredReview,
+  deferredAiReviewHasPending,
+  type DeferredAiReviewFields,
+} from "@/lib/apply-vehicle-intake-ai-suggestions";
+import {
+  processVehicleIntakeDocumentAction,
+  logIntakeReviewEventAction,
+} from "@/actions/vehicle-intake";
+import {
+  mergeIntakeProvenanceFields,
+  parseIntakeFieldProvenanceJson,
+  type IntakeFieldProvenanceV1,
+} from "@/lib/intake-field-provenance";
+import { Badge } from "@/components/ui/badge";
+import type { VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { isProvisionalIntakeVin } from "@/lib/vehicle-intake-helpers";
+import { isValidVinCheckDigit } from "@/lib/vin-extraction";
+
+interface VehicleFormValues {
+  vin: string;
+  year: number;
+  make: string;
+  model: string;
+  trim?: string | null;
+  bodyStyle?: string | null;
+  fuelType?: string | null;
+  transmission?: string | null;
+  doors?: number | null;
+  mileage: number;
+  drivetrain: Drivetrain;
+  batteryRange?: number | null;
+  batteryCapacityKWh?: number | null;
+  batteryChemistry?: string | null;
+  chargingStandard?: string | null;
+  exteriorColor: string;
+  interiorColor: string;
+  condition: InventoryCondition;
+  titleStatus: TitleStatus;
+  conditionNotes?: string | null;
+  price: number;
+  description?: string | null;
+  highlights?: string[];
+  features?: string[];
+  internalNotes?: string | null;
+  photos?: any;
+}
+
+const VEHICLE_INTAKE_STORAGE_KEY = "vehiclix_vehicle_intake_v2";
+
+/** Keeps RadioGroup controlled: always returns a string in the candidates list (never undefined). */
+function resolveOcrVinRadioValue(p: { ocrVinCandidates: string[]; selectedVin: string }): string {
+  const first = p.ocrVinCandidates[0] ?? "";
+  return p.selectedVin && p.ocrVinCandidates.includes(p.selectedVin) ? p.selectedVin : first;
+}
 
 const REQUIRED_FIELD_NAMES = new Set([
   "vin", "year", "make", "model", "mileage", "drivetrain",
@@ -49,6 +114,46 @@ const REQUIRED_FIELD_NAMES = new Set([
 ]);
 function requiredFieldErrorClass(fieldName: string, invalid: boolean): string {
   return invalid && REQUIRED_FIELD_NAMES.has(fieldName) ? "border-destructive ring-2 ring-destructive/20" : "";
+}
+
+const DECODER_SNAPSHOT_KEYS = [
+  "year",
+  "make",
+  "model",
+  "trim",
+  "drivetrain",
+  "bodyStyle",
+  "fuelType",
+  "transmission",
+  "doors",
+  "batteryCapacityKWh",
+  "highlights",
+] as const;
+
+function snapshotDecoderSlice(values: VehicleFormValues): Record<string, unknown> {
+  return {
+    year: values.year,
+    make: values.make,
+    model: values.model,
+    trim: values.trim,
+    drivetrain: values.drivetrain,
+    bodyStyle: values.bodyStyle,
+    fuelType: values.fuelType,
+    transmission: values.transmission,
+    doors: values.doors,
+    batteryCapacityKWh: values.batteryCapacityKWh,
+    highlights: [...(values.highlights || [])],
+  };
+}
+
+function diffDecoderFilledFields(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  for (const k of DECODER_SNAPSHOT_KEYS) {
+    if (k === "highlights") {
+      if (JSON.stringify(before.highlights) !== JSON.stringify(after.highlights)) keys.push("highlights");
+    } else if (before[k] !== after[k]) keys.push(k);
+  }
+  return keys;
 }
 
 const vehicleSchema = z.object({
@@ -85,46 +190,54 @@ interface VehicleFormProps {
   isEdit?: boolean;
 }
 
-interface VehicleFormValues {
-  vin: string;
-  year: number;
-  make: string;
-  model: string;
-  trim?: string | null;
-  bodyStyle?: string | null;
-  fuelType?: string | null;
-  transmission?: string | null;
-  doors?: number | null;
-  mileage: number;
-  drivetrain: Drivetrain;
-  batteryRange?: number | null;
-  batteryCapacityKWh?: number | null;
-  batteryChemistry?: string | null;
-  chargingStandard?: string | null;
-  exteriorColor: string;
-  interiorColor: string;
-  condition: InventoryCondition;
-  titleStatus: TitleStatus;
-  conditionNotes?: string | null;
-  price: number;
-  description?: string | null;
-  highlights?: string[];
-  features?: string[];
-  internalNotes?: string | null;
-  photos?: any;
-}
-
 export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isDecoding, setIsDecoding] = React.useState(false);
+  const [intakeBusy, setIntakeBusy] = React.useState(false);
   const [photos, setPhotos] = React.useState<File[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const intakeFileInputRef = React.useRef<HTMLInputElement>(null);
+  const vinInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [pendingOcrVinReview, setPendingOcrVinReview] = React.useState<{
+    ocrVinCandidates: string[];
+    selectedVin: string;
+    documentId?: string;
+    aiSuggestions: VehicleIntakeAiSuggestions | null;
+    aiMeta: VehicleIntakeAiMeta;
+  } | null>(null);
+  const [pendingVinIntake, setPendingVinIntake] = React.useState<{
+    extractedVin: string;
+    decoded: VinMetadata | null;
+    decodeFailed: boolean;
+    aiSuggestions: VehicleIntakeAiSuggestions | null;
+    aiMeta: VehicleIntakeAiMeta;
+    documentId?: string;
+  } | null>(null);
+
+  const intakeProvenanceRef = React.useRef<IntakeFieldProvenanceV1 | null>(
+    parseIntakeFieldProvenanceJson(initialData?.intakeFieldProvenance ?? null)
+  );
+  const lastIntakeDocumentIdRef = React.useRef<string | null>(null);
+
+  const [intakeAiAutoFields, setIntakeAiAutoFields] = React.useState<string[]>([]);
+  const [intakeAiAcceptedFields, setIntakeAiAcceptedFields] = React.useState<string[]>([]);
+  const [decoderFilledFields, setDecoderFilledFields] = React.useState<string[]>([]);
+  const [deferredAiReview, setDeferredAiReview] = React.useState<DeferredAiReviewFields | null>(null);
+  const [lastIntakeSummary, setLastIntakeSummary] = React.useState<{
+    decodeFailed: boolean;
+    aiMeta: VehicleIntakeAiMeta;
+    aiSuggestions: VehicleIntakeAiSuggestions | null;
+    aiAutoFilledFieldKeys: string[];
+  } | null>(null);
 
   const form = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleSchema) as any,
     defaultValues: initialData ? {
-      ...initialData,
+      ...(() => {
+        const { intakeFieldProvenance: _omit, ...rest } = initialData;
+        return rest;
+      })(),
       price: Number(initialData.price),
       batteryRange: initialData.batteryRangeEstimate,
       bodyStyle: initialData.bodyStyle ?? null,
@@ -134,6 +247,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       batteryCapacityKWh: initialData.batteryCapacityKWh ?? null,
       batteryChemistry: initialData.batteryChemistry ?? null,
       chargingStandard: initialData.chargingStandard ?? null,
+      conditionNotes: initialData.conditionNotes ?? null,
     } : {
       highlights: [],
       features: [],
@@ -149,6 +263,193 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     control: form.control,
     name: "features" as any,
   });
+
+  const mergeIntakeIntoForm = React.useCallback(
+    (payload: {
+      extractedVin: string;
+      decoded: VinMetadata | null;
+      decodeFailed: boolean;
+      aiSuggestions: VehicleIntakeAiSuggestions | null;
+      aiMeta: VehicleIntakeAiMeta;
+      documentId?: string;
+    }) => {
+      const beforeDecoder = snapshotDecoderSlice(form.getValues());
+      form.setValue("vin", payload.extractedVin);
+      if (payload.decoded) {
+        applyVinMetadataToVehicleForm(form.setValue, form.getValues, payload.decoded);
+      }
+      const afterDecoder = snapshotDecoderSlice(form.getValues());
+      const decoderKeys = diffDecoderFilledFields(beforeDecoder, afterDecoder);
+      setDecoderFilledFields(decoderKeys);
+
+      let autoKeys: string[] = [];
+      let deferred: DeferredAiReviewFields = {};
+      if (payload.aiSuggestions) {
+        const r = applyIntakeAiWithDeferredReview(
+          form.setValue,
+          form.getValues,
+          payload.aiSuggestions,
+          payload.decoded
+        );
+        deferred = r.deferred;
+        autoKeys = r.autoAppliedKeys;
+      }
+      setIntakeAiAutoFields(autoKeys);
+      setIntakeAiAcceptedFields([]);
+      setDeferredAiReview(deferredAiReviewHasPending(deferred) ? deferred : null);
+
+      const docId = payload.documentId?.trim();
+      if (docId) {
+        lastIntakeDocumentIdRef.current = docId;
+      }
+      const now = new Date().toISOString();
+      const decoderUpdates = Object.fromEntries(
+        decoderKeys.map((k) => [k, { source: "decoder" as const, acceptedAt: now }])
+      );
+      intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+        intakeProvenanceRef.current,
+        decoderUpdates,
+        docId ?? undefined
+      );
+      const autoUpdates = Object.fromEntries(
+        autoKeys.map((k) => [k, { source: "ai_auto" as const, acceptedAt: now }])
+      );
+      intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+        intakeProvenanceRef.current,
+        autoUpdates,
+        undefined
+      );
+
+      setLastIntakeSummary({
+        decodeFailed: payload.decodeFailed,
+        aiMeta: payload.aiMeta,
+        aiSuggestions: payload.aiSuggestions,
+        aiAutoFilledFieldKeys: autoKeys,
+      });
+
+      const hasDeferred = deferredAiReviewHasPending(deferred);
+      if (payload.decodeFailed) {
+        toast.message(
+          "VIN was set from your document, but NHTSA decode failed. Enter remaining details manually."
+        );
+      } else if (hasDeferred) {
+        toast.success(
+          "VIN decode applied. Approve or reject each document AI suggestion in the intake summary before saving."
+        );
+      } else if (autoKeys.length > 0 || decoderKeys.length > 0) {
+        toast.success(
+          "VIN decode and auto document suggestions applied to empty fields. Review labels before saving."
+        );
+      } else {
+        toast.success("VIN and vehicle details were applied from your document. Review before saving.");
+      }
+    },
+    [form]
+  );
+
+  const handleConfirmOcrVin = React.useCallback(async () => {
+    const p = pendingOcrVinReview;
+    if (!p || p.ocrVinCandidates.length === 0) return;
+    const vin = resolveOcrVinRadioValue(p).trim().toUpperCase();
+    if (vin.length !== 17 || !isValidVinCheckDigit(vin)) {
+      toast.error("Choose a valid 17-character VIN or edit manually.");
+      return;
+    }
+    setIsDecoding(true);
+    try {
+      let decoded: VinMetadata | null = null;
+      try {
+        decoded = await decodeVin(vin);
+      } catch {
+        decoded = null;
+      }
+      const decodeFailed = !decoded;
+      const formVin = (form.getValues("vin") || "").trim().toUpperCase();
+      const needsVinClashDialog =
+        formVin.length === 17 &&
+        !isProvisionalIntakeVin(formVin) &&
+        formVin !== vin;
+
+      const mergePayload = {
+        extractedVin: vin,
+        decoded,
+        decodeFailed,
+        aiSuggestions: p.aiSuggestions,
+        aiMeta: p.aiMeta,
+        documentId: p.documentId,
+      };
+
+      setPendingOcrVinReview(null);
+
+      if (needsVinClashDialog) {
+        setPendingVinIntake(mergePayload);
+      } else {
+        mergeIntakeIntoForm(mergePayload);
+      }
+    } finally {
+      setIsDecoding(false);
+    }
+  }, [pendingOcrVinReview, form, mergeIntakeIntoForm]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = sessionStorage.getItem(VEHICLE_INTAKE_STORAGE_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(VEHICLE_INTAKE_STORAGE_KEY);
+    try {
+      const payload = JSON.parse(raw) as {
+        extractedVin: string;
+        decoded: VinMetadata | null;
+        decodeFailed?: boolean;
+        requiresVinConfirmation?: boolean;
+        requiresOcrVinReview?: boolean;
+        ocrVinCandidates?: string[];
+        aiSuggestions?: VehicleIntakeAiSuggestions | null;
+        aiMeta?: VehicleIntakeAiMeta;
+        documentId?: string;
+      };
+      const aiMeta: VehicleIntakeAiMeta = payload.aiMeta ?? {
+        status: "skipped",
+        reason: "no_api_key",
+      };
+      const aiSuggestions = payload.aiSuggestions ?? null;
+      if (payload.requiresOcrVinReview && payload.ocrVinCandidates?.length) {
+        const cands = payload.ocrVinCandidates;
+        const ext = (payload.extractedVin || "").trim().toUpperCase();
+        const selectedVin = ext && cands.includes(ext) ? ext : cands[0]!;
+        setPendingOcrVinReview({
+          ocrVinCandidates: cands,
+          selectedVin,
+          documentId: payload.documentId,
+          aiSuggestions,
+          aiMeta,
+        });
+        return;
+      }
+      if (payload.requiresVinConfirmation) {
+        setPendingVinIntake({
+          extractedVin: payload.extractedVin,
+          decoded: payload.decoded,
+          decodeFailed: Boolean(payload.decodeFailed),
+          aiSuggestions,
+          aiMeta,
+          documentId: payload.documentId,
+        });
+        return;
+      }
+      mergeIntakeIntoForm({
+        extractedVin: payload.extractedVin,
+        decoded: payload.decoded,
+        decodeFailed: Boolean(payload.decodeFailed),
+        aiSuggestions,
+        aiMeta,
+        documentId: payload.documentId,
+      });
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once after redirect from intake; form API is stable
+  }, []);
 
   const watched = form.watch([
     "vin", "year", "make", "model", "mileage", "drivetrain",
@@ -186,38 +487,361 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
     setIsDecoding(true);
     try {
+      const beforeDecoder = snapshotDecoderSlice(form.getValues());
       const data = await decodeVin(vin);
       if (data) {
-        const isStringEmpty = (v: unknown) => v == null || v === undefined || !String(v ?? "").trim();
-        const isNumberEmpty = (v: unknown) =>
-          v == null || v === undefined || v === "" || (typeof v === "number" && (Number.isNaN(v) || v === 0));
-
-        if (data.year != null && isNumberEmpty(form.getValues("year"))) form.setValue("year", data.year);
-        if (data.make && isStringEmpty(form.getValues("make"))) form.setValue("make", data.make);
-        if (data.model && isStringEmpty(form.getValues("model"))) form.setValue("model", data.model);
-        if (data.trim != null && isStringEmpty(form.getValues("trim"))) form.setValue("trim", data.trim);
-        if (data.drivetrain && isStringEmpty(form.getValues("drivetrain"))) form.setValue("drivetrain", data.drivetrain);
-        if (data.bodyStyle != null && isStringEmpty(form.getValues("bodyStyle"))) form.setValue("bodyStyle", data.bodyStyle);
-        if (data.fuelType != null && isStringEmpty(form.getValues("fuelType"))) form.setValue("fuelType", data.fuelType);
-        if (data.transmission != null && isStringEmpty(form.getValues("transmission"))) form.setValue("transmission", data.transmission);
-        if (data.doors != null && isNumberEmpty(form.getValues("doors"))) form.setValue("doors", data.doors);
-        if (data.batteryCapacityKWh != null && isNumberEmpty(form.getValues("batteryCapacityKWh"))) form.setValue("batteryCapacityKWh", data.batteryCapacityKWh);
-
-        const currentHighlights = form.getValues("highlights") || [];
-        const newHighlights = [...currentHighlights];
-        if (data.engine && !newHighlights.includes(`Engine: ${data.engine}`)) {
-          newHighlights.push(`Engine: ${data.engine}`);
-        }
-        if (data.horsepower && !newHighlights.includes(`${data.horsepower} HP`)) {
-          newHighlights.push(`${data.horsepower} HP`);
-        }
-        form.setValue("highlights", newHighlights);
+        applyVinMetadataToVehicleForm(form.setValue, form.getValues, data);
+        const afterDecoder = snapshotDecoderSlice(form.getValues());
+        const decoderKeys = diffDecoderFilledFields(beforeDecoder, afterDecoder);
+        setDecoderFilledFields((prev) => [...new Set([...prev, ...decoderKeys])]);
+        const now = new Date().toISOString();
+        const decoderUpdates = Object.fromEntries(
+          decoderKeys.map((k) => [k, { source: "decoder" as const, acceptedAt: now }])
+        );
+        intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+          intakeProvenanceRef.current,
+          decoderUpdates,
+          undefined
+        );
         toast.success("Vehicle data populated from VIN");
       } else {
         toast.error("Could not decode VIN. Please enter details manually.");
       }
-    } catch (error) {
+    } catch {
       toast.error("VIN API error. Please enter details manually.");
+    } finally {
+      setIsDecoding(false);
+    }
+  };
+
+  const intakeFieldReviewClass = (field: string) => {
+    const aiMarked = intakeAiAutoFields.includes(field) || intakeAiAcceptedFields.includes(field);
+    if (aiMarked) return "ring-2 ring-amber-400/60 border-amber-500/40";
+    if (decoderFilledFields.includes(field)) return "ring-2 ring-sky-400/50 border-sky-500/35";
+    return "";
+  };
+
+  const stripDeferredPartial = React.useCallback(
+    (mutate: (d: DeferredAiReviewFields) => DeferredAiReviewFields) => {
+      setDeferredAiReview((prev) => {
+        if (!prev) return null;
+        const next = mutate({ ...prev });
+        return deferredAiReviewHasPending(next) ? next : null;
+      });
+    },
+    []
+  );
+
+  const bumpAiAcceptedProvenance = (fieldKey: string) => {
+    const now = new Date().toISOString();
+    intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+      intakeProvenanceRef.current,
+      { [fieldKey]: { source: "ai_accepted", acceptedAt: now } },
+      undefined
+    );
+  };
+
+  const acceptDeferredMileage = () => {
+    const v = deferredAiReview?.mileage;
+    if (v == null) return;
+    form.setValue("mileage", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.mileage;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "mileage"])]);
+    bumpAiAcceptedProvenance("mileage");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "mileage" });
+  };
+  const acceptDeferredExterior = () => {
+    const v = deferredAiReview?.exteriorColor;
+    if (!v) return;
+    form.setValue("exteriorColor", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.exteriorColor;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "exteriorColor"])]);
+    bumpAiAcceptedProvenance("exteriorColor");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "exteriorColor" });
+  };
+  const acceptDeferredInterior = () => {
+    const v = deferredAiReview?.interiorColor;
+    if (!v) return;
+    form.setValue("interiorColor", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.interiorColor;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "interiorColor"])]);
+    bumpAiAcceptedProvenance("interiorColor");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "interiorColor" });
+  };
+  const acceptDeferredConditionNotes = () => {
+    const v = deferredAiReview?.conditionNotes;
+    if (!v) return;
+    form.setValue("conditionNotes", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.conditionNotes;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "conditionNotes"])]);
+    bumpAiAcceptedProvenance("conditionNotes");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "conditionNotes" });
+  };
+  const acceptDeferredInternalNotes = () => {
+    const v = deferredAiReview?.internalNotes;
+    if (!v) return;
+    form.setValue("internalNotes", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.internalNotes;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "internalNotes"])]);
+    bumpAiAcceptedProvenance("internalNotes");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "internalNotes" });
+  };
+  const acceptDeferredTitle = () => {
+    const t = deferredAiReview?.title;
+    if (t?.statusHint) {
+      form.setValue("titleStatus", t.statusHint);
+      bumpAiAcceptedProvenance("titleStatus");
+      void logIntakeReviewEventAction({ action: "accept", fieldGroup: "title" });
+    } else {
+      void logIntakeReviewEventAction({ action: "reject", fieldGroup: "title" });
+    }
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.title;
+      return n;
+    });
+    if (t?.statusHint) setIntakeAiAcceptedFields((p) => [...new Set([...p, "titleStatus"])]);
+  };
+
+  const acceptDeferredHighlights = () => {
+    const sug = deferredAiReview?.highlightSuggestions;
+    if (!sug?.length) return;
+    const cur = form.getValues("highlights") || [];
+    const merged = [...cur];
+    for (const h of sug) {
+      if (!merged.includes(h)) merged.push(h);
+    }
+    form.setValue("highlights", merged);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.highlightSuggestions;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "highlights"])]);
+    bumpAiAcceptedProvenance("highlights");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "highlights" });
+  };
+
+  const acceptDeferredFeatures = () => {
+    const sug = deferredAiReview?.featureSuggestions;
+    if (!sug?.length) return;
+    const cur = form.getValues("features") || [];
+    const merged = [...cur];
+    for (const f of sug) {
+      if (!merged.includes(f)) merged.push(f);
+    }
+    form.setValue("features", merged);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.featureSuggestions;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "features"])]);
+    bumpAiAcceptedProvenance("features");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "features" });
+  };
+
+  const renderIntakeBadges = (field: string) => {
+    const bits: React.ReactNode[] = [];
+    if (decoderFilledFields.includes(field)) {
+      bits.push(
+        <Badge key="dec" variant="secondary" className="text-[10px] font-normal shrink-0">
+          From decoder · Needs review
+        </Badge>
+      );
+    }
+    const def = deferredAiReview;
+    const pending =
+      (field === "mileage" && def?.mileage != null) ||
+      (field === "exteriorColor" && Boolean(def?.exteriorColor)) ||
+      (field === "interiorColor" && Boolean(def?.interiorColor)) ||
+      (field === "conditionNotes" && Boolean(def?.conditionNotes)) ||
+      (field === "internalNotes" && Boolean(def?.internalNotes)) ||
+      (field === "titleStatus" && Boolean(def?.title)) ||
+      (field === "highlights" && Boolean(def?.highlightSuggestions?.length)) ||
+      (field === "features" && Boolean(def?.featureSuggestions?.length));
+    if (pending) {
+      bits.push(
+        <Badge
+          key="pend"
+          variant="outline"
+          className="text-[10px] font-normal shrink-0 border-amber-600/40 text-amber-950 dark:text-amber-100"
+        >
+          AI suggested · Pending accept
+        </Badge>
+      );
+    } else if (intakeAiAcceptedFields.includes(field)) {
+      bits.push(
+        <Badge key="acc" variant="outline" className="text-[10px] font-normal shrink-0">
+          AI suggested · Needs review
+        </Badge>
+      );
+    } else if (intakeAiAutoFields.includes(field)) {
+      bits.push(
+        <Badge key="auto" variant="outline" className="text-[10px] font-normal shrink-0">
+          AI suggested (auto) · Needs review
+        </Badge>
+      );
+    }
+    if (bits.length === 0) return null;
+    return <span className="flex flex-wrap items-center gap-1.5">{bits}</span>;
+  };
+
+  const handleIntakeDocumentSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const fd = new FormData();
+    fd.append("file", file);
+    if (isEdit && initialData?.id) {
+      fd.append("vehicleId", initialData.id);
+    }
+    const formVin = (form.getValues("vin") || "").trim().toUpperCase();
+    if (formVin) {
+      fd.append("formVin", formVin);
+    }
+
+    setIntakeBusy(true);
+    try {
+      const result = await processVehicleIntakeDocumentAction(fd);
+
+      if (!result.ok) {
+        const extra =
+          result.code === "AMBIGUOUS_VIN" && result.ambiguousCandidates?.length
+            ? ` Candidates: ${result.ambiguousCandidates.join(", ")}.`
+            : "";
+        toast.error(`${result.message}${extra}`);
+        if (result.vehicleId && result.createdDraft) {
+          router.replace(`/admin/inventory/${result.vehicleId}/edit`);
+        }
+        return;
+      }
+
+      if (result.createdDraft) {
+        sessionStorage.setItem(
+          VEHICLE_INTAKE_STORAGE_KEY,
+          JSON.stringify({
+            extractedVin: result.extractedVin,
+            decoded: result.decoded,
+            decodeFailed: result.decodeFailed,
+            requiresVinConfirmation: result.requiresVinConfirmation,
+            requiresOcrVinReview: Boolean(result.requiresOcrVinReview),
+            ocrVinCandidates: result.ocrVinCandidates,
+            aiSuggestions: result.aiSuggestions,
+            aiMeta: result.aiMeta,
+            documentId: result.documentId,
+          })
+        );
+        router.replace(`/admin/inventory/${result.vehicleId}/edit`);
+        return;
+      }
+
+      if (result.requiresOcrVinReview && result.ocrVinCandidates?.length) {
+        const cands = result.ocrVinCandidates;
+        const ext = (result.extractedVin || "").trim().toUpperCase();
+        const selectedVin = ext && cands.includes(ext) ? ext : cands[0]!;
+        setPendingOcrVinReview({
+          ocrVinCandidates: cands,
+          selectedVin,
+          documentId: result.documentId,
+          aiSuggestions: result.aiSuggestions,
+          aiMeta: result.aiMeta,
+        });
+        return;
+      }
+
+      if (result.requiresVinConfirmation) {
+        setPendingVinIntake({
+          extractedVin: result.extractedVin,
+          decoded: result.decoded,
+          decodeFailed: result.decodeFailed,
+          aiSuggestions: result.aiSuggestions,
+          aiMeta: result.aiMeta,
+          documentId: result.documentId,
+        });
+        return;
+      }
+
+      mergeIntakeIntoForm({
+        extractedVin: result.extractedVin,
+        decoded: result.decoded,
+        decodeFailed: result.decodeFailed,
+        aiSuggestions: result.aiSuggestions,
+        aiMeta: result.aiMeta,
+        documentId: result.documentId,
+      });
+    } finally {
+      setIntakeBusy(false);
+    }
+  };
+
+  const confirmUseDocumentVin = () => {
+    if (!pendingVinIntake) return;
+    mergeIntakeIntoForm(pendingVinIntake);
+    setPendingVinIntake(null);
+  };
+
+  const confirmKeepCurrentVin = async () => {
+    const current = (form.getValues("vin") || "").trim().toUpperCase();
+    setPendingVinIntake(null);
+    setLastIntakeSummary(null);
+    setIntakeAiAutoFields([]);
+    setIntakeAiAcceptedFields([]);
+    setDecoderFilledFields([]);
+    setDeferredAiReview(null);
+    intakeProvenanceRef.current = parseIntakeFieldProvenanceJson(
+      initialData?.intakeFieldProvenance ?? null
+    );
+    lastIntakeDocumentIdRef.current = null;
+    if (current.length !== 17) {
+      toast.error("Enter a valid 17-character VIN, then use Re-run decode if needed.");
+      return;
+    }
+    setIsDecoding(true);
+    try {
+      const beforeDecoder = snapshotDecoderSlice(form.getValues());
+      const data = await decodeVin(current);
+      if (data) {
+        applyVinMetadataToVehicleForm(form.setValue, form.getValues, data);
+        const afterDecoder = snapshotDecoderSlice(form.getValues());
+        const decoderKeys = diffDecoderFilledFields(beforeDecoder, afterDecoder);
+        setDecoderFilledFields(decoderKeys);
+        const now = new Date().toISOString();
+        const decoderUpdates = Object.fromEntries(
+          decoderKeys.map((k) => [k, { source: "decoder" as const, acceptedAt: now }])
+        );
+        intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+          intakeProvenanceRef.current,
+          decoderUpdates,
+          undefined
+        );
+        toast.success("Kept your VIN and applied decode data to empty fields.");
+      } else {
+        toast.error("Could not decode your VIN. Fill in details manually.");
+      }
+    } catch {
+      toast.error("VIN API error. Fill in details manually.");
     } finally {
       setIsDecoding(false);
     }
@@ -261,6 +885,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         });
         photos.forEach((photo) => formData.append("photos", photo));
 
+        const prov = intakeProvenanceRef.current;
+        if (prov && (Object.keys(prov.fields).length > 0 || prov.documentId)) {
+          formData.append("intakeFieldProvenance", JSON.stringify(prov));
+        }
+
         await createVehicleAction(formData);
         toast.success(status === "LISTED" ? "Vehicle published successfully" : "Vehicle saved as draft");
       } else {
@@ -273,6 +902,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             formData.append(key, value.toString());
           }
         });
+
+        const provEdit = intakeProvenanceRef.current;
+        if (provEdit && (Object.keys(provEdit.fields).length > 0 || provEdit.documentId)) {
+          formData.append("intakeFieldProvenance", JSON.stringify(provEdit));
+        }
 
         await updateVehicleAction(initialData.id, formData);
         toast.success("Vehicle updated successfully");
@@ -303,6 +937,15 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     toast.success("Primary photo updated");
   };
 
+  const resolvedOcrVinForConfirm = pendingOcrVinReview
+    ? resolveOcrVinRadioValue(pendingOcrVinReview).trim().toUpperCase()
+    : "";
+  const canConfirmOcrVin =
+    pendingOcrVinReview != null &&
+    pendingOcrVinReview.ocrVinCandidates.length > 0 &&
+    resolvedOcrVinForConfirm.length === 17 &&
+    isValidVinCheckDigit(resolvedOcrVinForConfirm);
+
   return (
     <Form {...form}>
       <form className="space-y-8 pb-24">
@@ -323,7 +966,17 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                   <FormItem className="flex-grow">
                     <FormLabel>VIN</FormLabel>
                     <FormControl>
-                      <Input placeholder="17-character VIN" {...field} value={field.value || ""} maxLength={17} className={cn("uppercase font-mono", requiredFieldErrorClass("vin", fieldState.invalid))} />
+                      <Input
+                        placeholder="17-character VIN"
+                        {...field}
+                        ref={(el) => {
+                          vinInputRef.current = el;
+                          field.ref(el);
+                        }}
+                        value={field.value || ""}
+                        maxLength={17}
+                        className={cn("uppercase font-mono", requiredFieldErrorClass("vin", fieldState.invalid))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -334,16 +987,356 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 variant="secondary" 
                 className="h-10 px-6 font-bold shadow-sm border-2 border-primary/10 hover:border-primary/30"
                 onClick={handleDecodeVin}
-                disabled={isDecoding}
+                disabled={isDecoding || intakeBusy}
               >
                 {isDecoding ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Search className="mr-2 h-4 w-4" />
                 )}
-                Decode VIN
+                Re-run decode
               </Button>
             </div>
+
+            <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
+              <p className="text-sm font-medium text-foreground">Optional: upload a document</p>
+              <p className="text-xs text-muted-foreground">
+                PDF, JPG/JPEG, or PNG (max 10MB). When we find a VIN, we set it and run the same NHTSA decode
+                automatically (empty fields only). Use <span className="font-medium text-foreground">Re-run decode</span>{" "}
+                after you edit the VIN. Your listing description and price are never changed by this step.
+              </p>
+              <input
+                ref={intakeFileInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                className="hidden"
+                onChange={handleIntakeDocumentSelected}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={intakeBusy || isDecoding}
+                onClick={() => intakeFileInputRef.current?.click()}
+              >
+                {intakeBusy ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload document
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {lastIntakeSummary && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/25 p-4 space-y-4 text-sm">
+                <p className="font-semibold text-foreground">Document intake summary (review required)</p>
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  VIN was set from your upload and NHTSA decode has already run for that VIN (empty fields only).
+                  Change the VIN and use <span className="font-medium text-foreground">Re-run decode</span> if you need a
+                  fresh decode.
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                  <li>
+                    <span className="text-foreground font-medium">Legend: </span>
+                    <Badge variant="secondary" className="text-[10px] mx-1">
+                      From decoder · Needs review
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] mx-1 border-amber-600/40">
+                      AI suggested · Pending accept
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] mx-1">
+                      AI suggested · Needs review
+                    </Badge>
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">VIN decode: </span>
+                    {lastIntakeSummary.decodeFailed
+                      ? "NHTSA decode failed — fill identity fields manually if needed."
+                      : decoderFilledFields.length > 0
+                        ? `Filled empty fields: ${decoderFilledFields.join(", ")}.`
+                        : "No decoder fields were empty to fill."}
+                  </li>
+                  <li>
+                    <span className="text-foreground font-medium">Document AI: </span>
+                    {lastIntakeSummary.aiMeta.status === "applied"
+                      ? "Model returned structured suggestions. Primary fields below need explicit Accept unless auto-applied."
+                      : lastIntakeSummary.aiMeta.status === "skipped" &&
+                          lastIntakeSummary.aiMeta.reason === "no_api_key"
+                        ? "Skipped — set OPENAI_API_KEY to enable optional document field suggestions."
+                        : lastIntakeSummary.aiMeta.status === "skipped" &&
+                            lastIntakeSummary.aiMeta.reason === "openai_error"
+                          ? `Skipped — ${lastIntakeSummary.aiMeta.message || "OpenAI request failed."}`
+                          : "Skipped."}
+                  </li>
+                  {lastIntakeSummary.aiAutoFilledFieldKeys.length > 0 && (
+                    <li>
+                      <span className="text-foreground font-medium">AI auto-applied (transmission & drivetrain only): </span>
+                      {lastIntakeSummary.aiAutoFilledFieldKeys.join(", ")}
+                    </li>
+                  )}
+                </ul>
+
+                {deferredAiReview && deferredAiReviewHasPending(deferredAiReview) ? (
+                  <div className="border-t border-amber-500/25 pt-3 space-y-3">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                      Approve AI suggestions (primary fields)
+                    </p>
+                    {deferredAiReview.mileage != null ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Mileage: </span>
+                          {deferredAiReview.mileage.toLocaleString()} mi
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" variant="default" className="h-8" onClick={acceptDeferredMileage}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "mileage" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.mileage;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.exteriorColor ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Exterior color: </span>
+                          {deferredAiReview.exteriorColor}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredExterior}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "exteriorColor" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.exteriorColor;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.interiorColor ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Interior color: </span>
+                          {deferredAiReview.interiorColor}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredInterior}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "interiorColor" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.interiorColor;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.conditionNotes ? (
+                      <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs font-medium text-foreground">Condition notes</span>
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">
+                          {deferredAiReview.conditionNotes}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredConditionNotes}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "conditionNotes" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.conditionNotes;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.internalNotes ? (
+                      <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs font-medium text-foreground">Internal notes</span>
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">
+                          {deferredAiReview.internalNotes}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredInternalNotes}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "internalNotes" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.internalNotes;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.title ? (
+                      <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs font-medium text-foreground">Title status / notes</span>
+                        {deferredAiReview.title.statusHint ? (
+                          <p className="text-xs text-muted-foreground">
+                            Suggested status:{" "}
+                            <span className="font-medium text-foreground">
+                              {TITLE_STATUS_LABELS[deferredAiReview.title.statusHint]}
+                            </span>
+                          </p>
+                        ) : null}
+                        {deferredAiReview.title.notes?.trim() ? (
+                          <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                            {deferredAiReview.title.notes}
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredTitle}>
+                            {deferredAiReview.title.statusHint ? "Accept title status" : "Dismiss"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "title" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.title;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.highlightSuggestions && deferredAiReview.highlightSuggestions.length > 0 ? (
+                      <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs font-medium text-foreground">Suggested highlights (not applied yet)</span>
+                        <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5 max-h-28 overflow-y-auto">
+                          {deferredAiReview.highlightSuggestions.map((h) => (
+                            <li key={h}>{h}</li>
+                          ))}
+                        </ul>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredHighlights}>
+                            Accept (append to highlights)
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "highlights" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.highlightSuggestions;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.featureSuggestions && deferredAiReview.featureSuggestions.length > 0 ? (
+                      <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs font-medium text-foreground">Suggested features (not applied yet)</span>
+                        <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5 max-h-28 overflow-y-auto">
+                          {deferredAiReview.featureSuggestions.map((f) => (
+                            <li key={f}>{f}</li>
+                          ))}
+                        </ul>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredFeatures}>
+                            Accept (append to features)
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "features" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.featureSuggestions;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <FormField
@@ -351,7 +1344,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="year"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Year</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Year
+                      {renderIntakeBadges("year")}
+                    </FormLabel>
                     <FormControl>
                       <Input type="number" {...field} value={field.value || ""} className={requiredFieldErrorClass("year", fieldState.invalid)} />
                     </FormControl>
@@ -364,7 +1360,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="make"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Make</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Make
+                      {renderIntakeBadges("make")}
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} className={requiredFieldErrorClass("make", fieldState.invalid)} />
                     </FormControl>
@@ -377,7 +1376,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="model"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Model</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Model
+                      {renderIntakeBadges("model")}
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} className={requiredFieldErrorClass("model", fieldState.invalid)} />
                     </FormControl>
@@ -390,7 +1392,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="trim"
                 render={({ field }) => (
                   <FormItem className="lg:col-span-2">
-                    <FormLabel>Trim (Optional)</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Trim (Optional)
+                      {renderIntakeBadges("trim")}
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Performance, Adventure" {...field} value={field.value || ""} />
                     </FormControl>
@@ -416,9 +1421,20 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               name="mileage"
               render={({ field, fieldState }) => (
                 <FormItem>
-                  <FormLabel>Mileage</FormLabel>
+                  <FormLabel className="flex flex-wrap items-center gap-2">
+                    Mileage
+                    {renderIntakeBadges("mileage")}
+                  </FormLabel>
                   <FormControl>
-                    <Input type="number" {...field} value={field.value || ""} className={requiredFieldErrorClass("mileage", fieldState.invalid)} />
+                    <Input
+                      type="number"
+                      {...field}
+                      value={field.value || ""}
+                      className={cn(
+                        requiredFieldErrorClass("mileage", fieldState.invalid),
+                        intakeFieldReviewClass("mileage")
+                      )}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -429,13 +1445,21 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               name="drivetrain"
               render={({ field, fieldState }) => (
                 <FormItem>
-                  <FormLabel>Drivetrain</FormLabel>
+                  <FormLabel className="flex flex-wrap items-center gap-2">
+                    Drivetrain
+                    {renderIntakeBadges("drivetrain")}
+                  </FormLabel>
                   <Select
                     value={field.value ?? ""}
                     onValueChange={(value) => field.onChange(value || null)}
                   >
                     <FormControl>
-                      <SelectTrigger className={requiredFieldErrorClass("drivetrain", fieldState.invalid)}>
+                      <SelectTrigger
+                        className={cn(
+                          requiredFieldErrorClass("drivetrain", fieldState.invalid),
+                          intakeFieldReviewClass("drivetrain")
+                        )}
+                      >
                         <SelectValue placeholder="Select drivetrain" />
                       </SelectTrigger>
                     </FormControl>
@@ -482,9 +1506,17 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               name="transmission"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Transmission (Optional)</FormLabel>
+                  <FormLabel className="flex flex-wrap items-center gap-2">
+                    Transmission (Optional)
+                    {renderIntakeBadges("transmission")}
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Automatic, CVT" {...field} value={field.value ?? ""} />
+                    <Input
+                      placeholder="e.g., Automatic, CVT"
+                      {...field}
+                      value={field.value ?? ""}
+                      className={cn(intakeFieldReviewClass("transmission"))}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -599,9 +1631,20 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="exteriorColor"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Exterior Color</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Exterior Color
+                      {renderIntakeBadges("exteriorColor")}
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Midnight Silver" {...field} value={field.value || ""} className={requiredFieldErrorClass("exteriorColor", fieldState.invalid)} />
+                      <Input
+                        placeholder="e.g., Midnight Silver"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(
+                          requiredFieldErrorClass("exteriorColor", fieldState.invalid),
+                          intakeFieldReviewClass("exteriorColor")
+                        )}
+                      />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -612,9 +1655,20 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="interiorColor"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Interior Color</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Interior Color
+                      {renderIntakeBadges("interiorColor")}
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Black Vegan Leather" {...field} value={field.value || ""} className={requiredFieldErrorClass("interiorColor", fieldState.invalid)} />
+                      <Input
+                        placeholder="e.g., Black Vegan Leather"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(
+                          requiredFieldErrorClass("interiorColor", fieldState.invalid),
+                          intakeFieldReviewClass("interiorColor")
+                        )}
+                      />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -665,13 +1719,21 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="titleStatus"
                 render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel>Title Status</FormLabel>
+                    <FormLabel className="flex flex-wrap items-center gap-2">
+                      Title Status
+                      {renderIntakeBadges("titleStatus")}
+                    </FormLabel>
                     <Select
                     value={field.value ?? ""}
                     onValueChange={(value) => field.onChange(value || null)}
                   >
                       <FormControl>
-                        <SelectTrigger className={requiredFieldErrorClass("titleStatus", fieldState.invalid)}>
+                        <SelectTrigger
+                          className={cn(
+                            requiredFieldErrorClass("titleStatus", fieldState.invalid),
+                            intakeFieldReviewClass("titleStatus")
+                          )}
+                        >
                           <SelectValue placeholder="Select title status" />
                         </SelectTrigger>
                       </FormControl>
@@ -693,11 +1755,14 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               name="conditionNotes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Condition Notes (Optional)</FormLabel>
+                  <FormLabel className="flex flex-wrap items-center gap-2">
+                    Condition Notes (Optional)
+                    {renderIntakeBadges("conditionNotes")}
+                  </FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="Detail any scratches, interior wear, or unique history..."
-                      className="min-h-[100px]"
+                      className={cn("min-h-[100px]", intakeFieldReviewClass("conditionNotes"))}
                       {...field}
                       value={field.value || ""}
                     />
@@ -765,8 +1830,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               )}
             />
 
-            <div className="space-y-4">
-              <FormLabel>Vehicle Highlights (Optional)</FormLabel>
+            <div className={cn("space-y-4", intakeFieldReviewClass("highlights"))}>
+              <FormLabel className="flex flex-wrap items-center gap-2">
+                Vehicle Highlights (Optional)
+                {renderIntakeBadges("highlights")}
+              </FormLabel>
               <div className="flex flex-wrap gap-2">
                 {highlightFields.map((field, index) => (
                   <div key={field.id} className="flex items-center gap-2 bg-muted p-2 rounded-md">
@@ -799,8 +1867,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <FormLabel>Feature Checklist (Optional)</FormLabel>
+            <div className={cn("space-y-4", intakeFieldReviewClass("features"))}>
+              <FormLabel className="flex flex-wrap items-center gap-2">
+                Feature Checklist (Optional)
+                {renderIntakeBadges("features")}
+              </FormLabel>
               <div className="flex flex-wrap gap-2">
                 {featureFields.map((field, index) => (
                   <div key={field.id} className="flex items-center gap-2 bg-muted p-2 rounded-md">
@@ -921,11 +1992,14 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               name="internalNotes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Internal-Only Notes (Private)</FormLabel>
+                  <FormLabel className="flex flex-wrap items-center gap-2">
+                    Internal-Only Notes (Private)
+                    {renderIntakeBadges("internalNotes")}
+                  </FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="Notes for dealer use only. Acquisition cost, service status, etc..."
-                      className="min-h-[100px]"
+                      className={cn("min-h-[100px]", intakeFieldReviewClass("internalNotes"))}
                       {...field}
                       value={field.value || ""}
                     />
@@ -937,6 +2011,95 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             />
           </CardContent>
         </Card>
+
+        <Dialog
+          open={!!pendingOcrVinReview}
+          onOpenChange={(open) => {
+            if (!open) setPendingOcrVinReview(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md" showCloseButton>
+            <DialogHeader>
+              <DialogTitle>Confirm VIN from document</DialogTitle>
+              <DialogDescription>
+                This VIN was inferred with OCR-style corrections or from a photo scan — it is not treated as a
+                zero-error text read. Pick the VIN that matches the vehicle, or enter it manually. We only run the
+                decoder after you confirm. If the VIN in your form differs, you&apos;ll get a second prompt to choose
+                which to keep.
+              </DialogDescription>
+            </DialogHeader>
+            {pendingOcrVinReview && pendingOcrVinReview.ocrVinCandidates.length > 0 ? (
+              <RadioGroup
+                value={resolveOcrVinRadioValue(pendingOcrVinReview)}
+                onValueChange={(v) =>
+                  setPendingOcrVinReview((prev) => (prev ? { ...prev, selectedVin: v } : prev))
+                }
+                className="grid gap-3 py-2"
+              >
+                {pendingOcrVinReview.ocrVinCandidates.map((v) => (
+                  <div key={v} className="flex items-center gap-2">
+                    <RadioGroupItem value={v} id={`ocr-vin-${v}`} />
+                    <label htmlFor={`ocr-vin-${v}`} className="font-mono text-sm cursor-pointer leading-none">
+                      {v}
+                    </label>
+                  </div>
+                ))}
+              </RadioGroup>
+            ) : null}
+            <DialogFooter className="flex-col sm:flex-row gap-2 border-0 bg-transparent p-0 pt-2 sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setPendingOcrVinReview(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPendingOcrVinReview(null);
+                  toast.message("Enter the VIN in the field above, then use Re-run decode if needed.");
+                  vinInputRef.current?.focus();
+                }}
+              >
+                Edit manually
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleConfirmOcrVin()}
+                disabled={isDecoding || intakeBusy || !canConfirmOcrVin}
+              >
+                {isDecoding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Use this VIN
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!pendingVinIntake}
+          onOpenChange={(open) => {
+            if (!open) setPendingVinIntake(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md" showCloseButton>
+            <DialogHeader>
+              <DialogTitle>Confirm VIN from document</DialogTitle>
+              <DialogDescription>
+                The VIN in your form ({(form.getValues("vin") || "").trim().toUpperCase() || "—"}) does not match the
+                one found in the upload ({pendingVinIntake?.extractedVin ?? "—"}). Use the document VIN only if you are
+                sure it is correct.                 Decoder data fills empty fields only; description, price, and listing copy stay
+                unchanged. Document AI never replaces decoder identity fields and only fills empty
+                placeholders unless you apply a title status suggestion explicitly.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="sm:justify-end gap-2 border-0 bg-transparent p-0 pt-2">
+              <Button type="button" variant="outline" onClick={confirmKeepCurrentVin}>
+                Keep my VIN
+              </Button>
+              <Button type="button" onClick={confirmUseDocumentVin}>
+                Use document VIN
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Sticky Bottom Bar */}
         <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-background/80 backdrop-blur-sm border-t p-4 z-20 shadow-lg">

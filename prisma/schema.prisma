@@ -164,6 +164,10 @@ model Vehicle {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   condition            InventoryCondition
+  /** Dealer condition / history notes (optional); not marketing copy. */
+  conditionNotes       String?
+  /** Phase 2C: last-known intake field sources (decoder / ai); support & debug only. */
+  intakeFieldProvenance Json?
   organizationId       String
   /** Public identity for catalog/VDP; unique per organization. Backfilled for existing rows. */
   slug                 String?

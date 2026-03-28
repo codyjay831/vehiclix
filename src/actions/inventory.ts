@@ -15,6 +15,16 @@ import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
 import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
+import { parseIntakeFieldProvenanceJson } from "@/lib/intake-field-provenance";
+
+function parseProvenanceFromFormData(formData: FormData): Prisma.InputJsonValue | undefined {
+  const raw = formData.get("intakeFieldProvenance");
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const parsed = parseIntakeFieldProvenanceJson(raw);
+  if (!parsed) return undefined;
+  if (Object.keys(parsed.fields).length === 0 && !parsed.documentId) return undefined;
+  return parsed as unknown as Prisma.InputJsonValue;
+}
 
 /**
  * STORAGE CLEANUP GAP (documented — not fixed in this pass):
@@ -124,6 +134,8 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
     throw new Error("A vehicle with this VIN already exists");
   }
 
+  const intakeFieldProvenance = parseProvenanceFromFormData(formData);
+
   await db.$transaction(async (tx) => {
     const updatedVehicle = await tx.vehicle.update({
       where: { id: vehicleId },
@@ -152,6 +164,8 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
         highlights,
         features,
         internalNotes,
+        conditionNotes,
+        ...(intakeFieldProvenance !== undefined ? { intakeFieldProvenance } : {}),
       },
     });
 
@@ -302,6 +316,8 @@ export async function createVehicleAction(formData: FormData) {
 
   const isPublishing = status === "LISTED";
 
+  const intakeFieldProvenance = parseProvenanceFromFormData(formData);
+
   // Database Transaction
   await db.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
@@ -330,8 +346,10 @@ export async function createVehicleAction(formData: FormData) {
         highlights,
         features,
         internalNotes,
+        conditionNotes,
         vehicleStatus: status,
         organizationId: user.organizationId!,
+        ...(intakeFieldProvenance !== undefined ? { intakeFieldProvenance } : {}),
         media: {
           createMany: {
             data: mediaRecords,
