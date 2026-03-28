@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { Role } from "@prisma/client";
+import { vehicleNestedAdminContextSelect } from "@/lib/prisma/vehicle-safe-select";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export default async function LeadDetailPage({
       organizationId: user.organizationId 
     },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
       assignedTo: {
         select: { id: true, firstName: true, lastName: true },
       },

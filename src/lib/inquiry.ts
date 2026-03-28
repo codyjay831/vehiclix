@@ -1,5 +1,6 @@
 import { db } from "./db";
-import { InquiryWithVehicle, InquiryStatus } from "@/types";
+import { InquiryWithVehicle } from "@/types";
+import { vehicleNestedAdminContextSelect } from "@/lib/prisma/vehicle-safe-select";
 
 /**
  * Fetches all inquiries for the admin dashboard.
@@ -9,7 +10,7 @@ export async function getAdminInquiries(organizationId: string): Promise<Inquiry
   return db.vehicleInquiry.findMany({
     where: { organizationId },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
     },
     orderBy: {
       createdAt: "desc",
@@ -25,7 +26,7 @@ export async function getInquiryDetail(organizationId: string, id: string) {
   return db.vehicleInquiry.findUnique({
     where: { id, organizationId },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
       user: true,
     },
   });

@@ -7,6 +7,7 @@ import { CheckCircle2, ArrowRight, Mail, LayoutDashboard, CarFront } from "lucid
 import { Card, CardContent } from "@/components/ui/card";
 import { BRANDING } from "@/config/branding";
 import { storefrontAuthBridgeHref } from "@/lib/storefront-auth-bridge";
+import { vehicleNestedAdminContextSelect } from "@/lib/prisma/vehicle-safe-select";
 
 interface ConfirmationPageProps {
   params: Promise<{ dealId: string }>;
@@ -20,7 +21,7 @@ export default async function ReservationConfirmationPage({ params }: Confirmati
       id: dealId,
     },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
       user: true,
       organization: true,
     },

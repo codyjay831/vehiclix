@@ -66,7 +66,7 @@ export function toPublicVehicleDetailDto(vehicle: VehicleWithMedia): PublicVehic
 
   return {
     id: vehicle.id,
-    slug: (vehicle as { slug?: string | null }).slug ?? null,
+    slug: vehicle.slug ?? null,
     year: vehicle.year,
     make: vehicle.make,
     model: vehicle.model,

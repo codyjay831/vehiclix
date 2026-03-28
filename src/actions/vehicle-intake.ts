@@ -141,12 +141,6 @@ async function createPlaceholderDraftVehicle(
         condition: InventoryCondition.GOOD,
         titleStatus: TitleStatus.CLEAN,
         price: new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE),
-        intakeFieldProvenance: {
-          v: 1,
-          documentId: null,
-          fields: {},
-          intakePlaceholderPrice: true,
-        } as Prisma.InputJsonValue,
         description: null,
         highlights: [],
         features: [],

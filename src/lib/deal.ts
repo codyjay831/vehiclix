@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { DealFullPayload, DealStatus } from "@/types";
+import { vehicleNestedAdminContextSelect } from "@/lib/prisma/vehicle-safe-select";
 
 /**
  * Fetches all deals for the admin dashboard.
@@ -9,7 +9,7 @@ export async function getAdminDeals(organizationId: string) {
   return db.deal.findMany({
     where: { organizationId },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
       user: true,
       deposits: {
         orderBy: {
@@ -31,7 +31,7 @@ export async function getAdminDealDetail(organizationId: string, id: string) {
   return db.deal.findFirst({
     where: { id, organizationId },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
       user: true,
       deposits: {
         orderBy: {

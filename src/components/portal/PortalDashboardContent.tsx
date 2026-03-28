@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Deal, Vehicle, VehicleMedia, VehicleInquiry, VehicleRequest, DealStatus } from "@prisma/client";
+import { Deal, VehicleRequest, DealStatus } from "@prisma/client";
+import type { PortalActiveDealVehicle } from "@/lib/prisma/vehicle-safe-select";
+import type { InquiryWithVehicle } from "@/types";
 import { DEAL_STATUS_LABELS, INQUIRY_STATUS_LABELS, REQUEST_STATUS_LABELS } from "@/types";
 import { MilestoneTracker } from "./MilestoneTracker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +13,11 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, CarFront, FileText, LayoutDashboard, History, Search, HistoryIcon } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
 
-interface ActiveDealWithContext extends Deal {
-  vehicle: Vehicle & {
-    media: VehicleMedia[];
-  };
-}
+type ActiveDealWithContext = Omit<Deal, "vehicle"> & { vehicle: PortalActiveDealVehicle };
 
 interface PortalDashboardContentProps {
   activeDeal: ActiveDealWithContext | null;
-  recentInquiries: (VehicleInquiry & { vehicle: Vehicle })[];
+  recentInquiries: InquiryWithVehicle[];
   recentRequests: VehicleRequest[];
 }
 

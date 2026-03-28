@@ -1,6 +1,12 @@
 import { db } from "./db";
-import { VehicleWithMedia, VehicleStatus, Prisma } from "@/types";
+import type { VehicleWithMedia } from "@/lib/prisma/vehicle-safe-select";
+import { Prisma, VehicleStatus } from "@prisma/client";
 import { getPublicUrl } from "@/lib/storage";
+import {
+  buildVehicleInventorySelect,
+  vehicleForEditSelect,
+  vehicleWithMediaInventoryListSelect,
+} from "@/lib/prisma/vehicle-safe-select";
 
 /**
  * Enriches vehicle media with public URLs.
@@ -9,15 +15,17 @@ import { getPublicUrl } from "@/lib/storage";
  * - Legacy paths (/uploads/inventory/..., uploads/inventory/...): normalized to key then resolved.
  * - Bare key: resolved via active provider.
  */
-function enrichVehicleMedia(vehicle: any) {
-  if (!vehicle || !vehicle.media) return vehicle;
-
-  vehicle.media = vehicle.media.map((m: any) => ({
-    ...m,
-    url: getPublicUrl(m.url),
-  }));
-
-  return vehicle;
+function enrichVehicleMedia<T>(vehicle: T | null): T | null {
+  if (!vehicle || typeof vehicle !== "object" || !("media" in vehicle)) return vehicle;
+  const v = vehicle as { media?: { url: string }[] | null };
+  if (!v.media?.length) return vehicle;
+  return {
+    ...vehicle,
+    media: v.media.map((m) => ({
+      ...m,
+      url: getPublicUrl(m.url),
+    })),
+  } as T;
 }
 
 /**
@@ -27,33 +35,13 @@ function enrichVehicleMedia(vehicle: any) {
 export async function getAdminInventory(organizationId: string): Promise<VehicleWithMedia[]> {
   const vehicles = await db.vehicle.findMany({
     where: { organizationId },
-    include: {
-      media: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-        take: 1, // Only need the primary thumbnail for the table
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          phone: true,
-        },
-      },
-      _count: {
-        select: {
-          inquiries: true,
-        },
-      },
-    },
+    select: vehicleWithMediaInventoryListSelect,
     orderBy: {
       createdAt: "desc",
     },
   });
 
-  return vehicles.map(enrichVehicleMedia);
+  return vehicles.map((v) => enrichVehicleMedia(v)!) as VehicleWithMedia[];
 }
 
 /**
@@ -62,6 +50,7 @@ export async function getAdminInventory(organizationId: string): Promise<Vehicle
 export async function getVehicleForEdit(organizationId: string, id: string) {
   return db.vehicle.findFirst({
     where: { id, organizationId },
+    select: vehicleForEditSelect,
   });
 }
 
@@ -71,29 +60,10 @@ export async function getVehicleForEdit(organizationId: string, id: string) {
 export async function getAdminVehicleDetail(organizationId: string, id: string): Promise<VehicleWithMedia | null> {
   const vehicle = await db.vehicle.findFirst({
     where: { id, organizationId },
-    include: {
-      media: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          phone: true,
-        },
-      },
-      _count: {
-        select: {
-          inquiries: true,
-        },
-      },
-    },
+    select: buildVehicleInventorySelect(),
   });
 
-  return enrichVehicleMedia(vehicle);
+  return enrichVehicleMedia(vehicle) as VehicleWithMedia | null;
 }
 
 /**
@@ -148,31 +118,11 @@ export async function getPublicInventory(
 
   const vehicles = await db.vehicle.findMany({
     where,
-    include: {
-      media: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-        take: 1,
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          phone: true,
-        },
-      },
-      _count: {
-        select: {
-          inquiries: true,
-        },
-      },
-    },
+    select: vehicleWithMediaInventoryListSelect,
     orderBy,
   });
 
-  return vehicles.map(enrichVehicleMedia);
+  return vehicles.map((v) => enrichVehicleMedia(v)!) as VehicleWithMedia[];
 }
 
 /**
@@ -180,9 +130,9 @@ export async function getPublicInventory(
  */
 export async function getPublicMakes(organizationId: string): Promise<string[]> {
   const result = await db.vehicle.findMany({
-    where: { 
+    where: {
       organizationId,
-      vehicleStatus: "LISTED" as VehicleStatus 
+      vehicleStatus: "LISTED" as VehicleStatus,
     },
     select: { make: true },
     distinct: ["make"],
@@ -200,34 +150,14 @@ export async function getFeaturedInventory(organizationId: string): Promise<Vehi
       organizationId,
       vehicleStatus: "LISTED" as VehicleStatus,
     },
-    include: {
-      media: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-        take: 1,
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          phone: true,
-        },
-      },
-      _count: {
-        select: {
-          inquiries: true,
-        },
-      },
-    },
+    select: vehicleWithMediaInventoryListSelect,
     orderBy: {
       createdAt: "desc",
     },
     take: 3,
   });
 
-  return vehicles.map(enrichVehicleMedia);
+  return vehicles.map((v) => enrichVehicleMedia(v)!) as VehicleWithMedia[];
 }
 
 /**
@@ -241,29 +171,10 @@ export async function getPublicVehicleDetail(organizationId: string, id: string)
       organizationId,
       vehicleStatus: "LISTED" as VehicleStatus,
     },
-    include: {
-      media: {
-        orderBy: {
-          displayOrder: "asc",
-        },
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          phone: true,
-        },
-      },
-      _count: {
-        select: {
-          inquiries: true,
-        },
-      },
-    },
+    select: buildVehicleInventorySelect(),
   });
 
-  return enrichVehicleMedia(vehicle);
+  return enrichVehicleMedia(vehicle) as VehicleWithMedia | null;
 }
 
 /**
@@ -278,21 +189,17 @@ export async function getPublicVehicleDetailBySlugOrId(
     organizationId,
     vehicleStatus: "LISTED" as VehicleStatus,
   };
-  const include = {
-    media: { orderBy: { displayOrder: "asc" as const } },
-    organization: { select: { id: true, name: true, slug: true, phone: true } },
-    _count: { select: { inquiries: true } },
-  };
+  const select = buildVehicleInventorySelect();
 
   const bySlug = await db.vehicle.findFirst({
     where: { ...whereBase, slug: slugOrId },
-    include,
+    select,
   });
-  if (bySlug) return enrichVehicleMedia(bySlug);
+  if (bySlug) return enrichVehicleMedia(bySlug) as VehicleWithMedia | null;
 
   const byId = await db.vehicle.findFirst({
     where: { ...whereBase, id: slugOrId },
-    include,
+    select,
   });
-  return enrichVehicleMedia(byId);
+  return enrichVehicleMedia(byId) as VehicleWithMedia | null;
 }

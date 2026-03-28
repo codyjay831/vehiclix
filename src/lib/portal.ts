@@ -1,6 +1,10 @@
 import { db } from "./db";
 import { DealStatus } from "@prisma/client";
 import { getAuthenticatedUser } from "./auth";
+import {
+  portalActiveDealVehicleSelect,
+  vehicleNestedAdminContextSelect,
+} from "@/lib/prisma/vehicle-safe-select";
 
 /**
  * Resolves the currently authenticated customer user.
@@ -32,14 +36,7 @@ export async function getActiveDeal(userId: string, organizationId?: string | nu
     },
     include: {
       vehicle: {
-        include: {
-          media: {
-            orderBy: {
-              displayOrder: "asc",
-            },
-            take: 1,
-          },
-        },
+        select: portalActiveDealVehicleSelect,
       },
     },
     orderBy: {
@@ -62,7 +59,7 @@ export async function getRecentInquiries(userId: string, organizationId?: string
       organizationId,
     },
     include: {
-      vehicle: true,
+      vehicle: { select: vehicleNestedAdminContextSelect },
     },
     orderBy: {
       createdAt: "desc",
