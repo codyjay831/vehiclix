@@ -60,7 +60,38 @@ function resolveLocalTesseractEngLangPath(): string {
   }
 }
 
+/**
+ * pdf-parse → pdfjs-dist evaluates `new DOMMatrix()` at module load before pdf.js's own
+ * Node polyfill runs. Cloud Run / Node without DOMMatrix then throws ReferenceError.
+ * @napi-rs/canvas is already a dependency of pdf-parse; we install globals first.
+ */
+let pdfJsNodePolyfillsApplied = false;
+
+async function ensurePdfJsNodePolyfills(): Promise<void> {
+  if (pdfJsNodePolyfillsApplied) return;
+  const needsCanvasGlobals =
+    typeof globalThis.DOMMatrix === "undefined" ||
+    typeof globalThis.Path2D === "undefined" ||
+    typeof globalThis.ImageData === "undefined";
+  if (!needsCanvasGlobals) {
+    pdfJsNodePolyfillsApplied = true;
+    return;
+  }
+  const canvas = await import("@napi-rs/canvas");
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    globalThis.DOMMatrix = canvas.DOMMatrix as typeof globalThis.DOMMatrix;
+  }
+  if (typeof globalThis.Path2D === "undefined") {
+    globalThis.Path2D = canvas.Path2D as typeof globalThis.Path2D;
+  }
+  if (typeof globalThis.ImageData === "undefined") {
+    globalThis.ImageData = canvas.ImageData as typeof globalThis.ImageData;
+  }
+  pdfJsNodePolyfillsApplied = true;
+}
+
 export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
+  await ensurePdfJsNodePolyfills();
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: buffer });
   try {

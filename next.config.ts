@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "@prisma/client",
     "@google-cloud/cloud-sql-connector",
+    "@napi-rs/canvas",
     "pdf-parse",
     "tesseract.js",
     "@tesseract.js-data/eng",
