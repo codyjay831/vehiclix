@@ -32,6 +32,55 @@ const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const PDF_TEXT_MS = 25_000;
 const IMAGE_OCR_MS = 55_000;
 
+type IntakeExtractionFailureClass = "timeout" | "network" | "tesseract_init" | "pdf_parse" | "unknown";
+
+function classifyIntakeTextExtractionFailure(
+  err: unknown,
+  opts: { timedOut: boolean; route: "pdf" | "image" }
+): IntakeExtractionFailureClass {
+  if (opts.timedOut) return "timeout";
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (
+    msg.includes("network error while fetching") ||
+    msg.includes("fetch failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("etimedout") ||
+    msg.includes("socket hang up") ||
+    msg.includes("getaddrinfo") ||
+    msg.includes("certificate") ||
+    msg.includes("ssl") ||
+    msg.includes("tls")
+  ) {
+    return "network";
+  }
+  if (opts.route === "pdf") {
+    if (
+      msg.includes("pdf") ||
+      msg.includes("xref") ||
+      msg.includes("password") ||
+      msg.includes("startxref") ||
+      msg.includes("trailer") ||
+      msg.includes("pdfium") ||
+      msg.includes("pdfjs")
+    ) {
+      return "pdf_parse";
+    }
+    return "unknown";
+  }
+  if (
+    msg.includes("traineddata") ||
+    msg.includes("tesseract") ||
+    msg.includes("lstm") ||
+    msg.includes("wasm") ||
+    msg.includes("initializing")
+  ) {
+    return "tesseract_init";
+  }
+  return "unknown";
+}
+
 const LOCKED: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
 function textLengthBucket(len: number): "empty" | "small" | "medium" | "large" {
@@ -241,12 +290,36 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      const errName = e instanceof Error ? e.name : "NonError";
       const timedOut = msg.includes("timed out");
+      const extractionRoute = mime === "application/pdf" ? "pdf" : "image";
+      const failureClass = classifyIntakeTextExtractionFailure(e, { timedOut, route: extractionRoute });
+      const preview = msg.slice(0, 200);
       intakeTelemetry("intake_text_extraction", {
         ok: false,
         kind: extractionKind,
+        extraction_route: extractionRoute,
+        mime: mime.slice(0, 128),
+        file_size_bytes: file.size,
         timed_out: timedOut,
+        failure_class: failureClass,
+        error_name: errName.slice(0, 80),
+        error_message_preview: preview,
       });
+      console.error(
+        JSON.stringify({
+          scope: "vehiclix:intake",
+          event: "intake_text_extraction_failure",
+          ts: new Date().toISOString(),
+          extraction_kind: extractionRoute,
+          mime,
+          file_size_bytes: file.size,
+          timed_out: timedOut,
+          failure_class: failureClass,
+          error_name: errName,
+          error_message_preview: preview,
+        })
+      );
       if (timedOut) {
         return {
           ok: false,
