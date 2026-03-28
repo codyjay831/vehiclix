@@ -9,7 +9,11 @@ import { saveFile } from "@/lib/storage";
 import { decodeVin } from "@/lib/vin";
 import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
 import { collectRankedVinCandidates, isValidVinCheckDigit, withTimeout } from "@/lib/vin-extraction";
-import { extractTextFromImageBuffer, extractTextFromPdfBuffer } from "@/lib/vin-extraction-server";
+import {
+  extractTextFromImageBuffer,
+  extractTextFromPdfBuffer,
+  ImageOcrFailureError,
+} from "@/lib/vin-extraction-server";
 import { isProvisionalIntakeVin, randomProvisionalVin } from "@/lib/vehicle-intake-helpers";
 import { isVinUnique } from "@/actions/inventory";
 import { fetchIntakeFieldSuggestionsFromOpenAI } from "@/lib/openai-intake-suggestions";
@@ -25,9 +29,15 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 const PDF_TEXT_MS = 25_000;
-const IMAGE_OCR_MS = 55_000;
+const IMAGE_OCR_MS = 65_000;
 
-type IntakeExtractionFailureClass = "timeout" | "network" | "tesseract_init" | "pdf_parse" | "unknown";
+type IntakeExtractionFailureClass =
+  | "timeout"
+  | "network"
+  | "tesseract_init"
+  | "pdf_parse"
+  | "image_too_large_pixels"
+  | "unknown";
 
 function classifyIntakeTextExtractionFailure(
   err: unknown,
@@ -35,6 +45,9 @@ function classifyIntakeTextExtractionFailure(
 ): IntakeExtractionFailureClass {
   if (opts.timedOut) return "timeout";
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (msg.includes("image_too_large_pixels")) {
+    return "image_too_large_pixels";
+  }
   if (
     msg.includes("network error while fetching") ||
     msg.includes("fetch failed") ||
@@ -272,16 +285,36 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     let plainText: string;
     const extractionKind = mime === "application/pdf" ? "pdf_text" : "image_ocr";
+    let imageOcrMeta:
+      | {
+          image_width?: number | null;
+          image_height?: number | null;
+          image_megapixels?: number | null;
+          ocr_pass?: number | null;
+          ocr_text_length?: number | null;
+          ocr_duration_ms?: number | null;
+        }
+      | undefined;
     try {
       if (mime === "application/pdf") {
         plainText = await withTimeout(extractTextFromPdfBuffer(buffer), PDF_TEXT_MS, "PDF extraction");
       } else {
-        plainText = await withTimeout(extractTextFromImageBuffer(buffer), IMAGE_OCR_MS, "Image OCR");
+        const imageResult = await withTimeout(extractTextFromImageBuffer(buffer), IMAGE_OCR_MS, "Image OCR");
+        plainText = imageResult.text;
+        imageOcrMeta = {
+          image_width: imageResult.meta.imageWidth,
+          image_height: imageResult.meta.imageHeight,
+          image_megapixels: imageResult.meta.imageMegapixels,
+          ocr_pass: imageResult.meta.ocrPass,
+          ocr_text_length: imageResult.meta.ocrTextLength,
+          ocr_duration_ms: imageResult.meta.ocrDurationMs,
+        };
       }
       intakeTelemetry("intake_text_extraction", {
         ok: true,
         kind: extractionKind,
         length_bucket: textLengthBucket(plainText.length),
+        ...(extractionKind === "image_ocr" ? imageOcrMeta : {}),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -290,6 +323,16 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       const extractionRoute = mime === "application/pdf" ? "pdf" : "image";
       const failureClass = classifyIntakeTextExtractionFailure(e, { timedOut, route: extractionRoute });
       const preview = msg.slice(0, 200);
+      const imageFailureMeta =
+        e instanceof ImageOcrFailureError
+          ? {
+              image_width: e.meta.imageWidth ?? null,
+              image_height: e.meta.imageHeight ?? null,
+              image_megapixels: e.meta.imageMegapixels ?? null,
+            }
+          : extractionRoute === "image"
+            ? (imageOcrMeta ?? {})
+            : {};
       intakeTelemetry("intake_text_extraction", {
         ok: false,
         kind: extractionKind,
@@ -300,6 +343,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
         failure_class: failureClass,
         error_name: errName.slice(0, 80),
         error_message_preview: preview,
+        ...imageFailureMeta,
       });
       console.error(
         JSON.stringify({
@@ -313,6 +357,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           failure_class: failureClass,
           error_name: errName,
           error_message_preview: preview,
+          ...imageFailureMeta,
         })
       );
       if (timedOut) {
