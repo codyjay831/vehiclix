@@ -8,13 +8,8 @@ import { requireUserWithOrg } from "@/lib/auth";
 import { saveFile } from "@/lib/storage";
 import { decodeVin } from "@/lib/vin";
 import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
-import {
-  extractTextFromPdfBuffer,
-  extractTextFromImageBuffer,
-  collectRankedVinCandidates,
-  isValidVinCheckDigit,
-  withTimeout,
-} from "@/lib/vin-extraction";
+import { collectRankedVinCandidates, isValidVinCheckDigit, withTimeout } from "@/lib/vin-extraction";
+import { extractTextFromImageBuffer, extractTextFromPdfBuffer } from "@/lib/vin-extraction-server";
 import { isProvisionalIntakeVin, randomProvisionalVin } from "@/lib/vehicle-intake-helpers";
 import { isVinUnique } from "@/actions/inventory";
 import { fetchIntakeFieldSuggestionsFromOpenAI } from "@/lib/openai-intake-suggestions";

@@ -1,22 +1,7 @@
 /**
- * Phase 1 smart intake: extract plain text from PDF / images and find valid VINs (ISO 3779 check digit).
- * OCR is best-effort; image paths use ranked candidates + conservative OCR-error repair (see collectRankedVinCandidates).
+ * Phase 1 smart intake: VIN validation and ranked candidate extraction from plain text (client- and server-safe).
+ * PDF/image buffer extraction lives in `vin-extraction-server.ts` (server-only; uses Node + tesseract.js).
  */
-
-import path from "node:path";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-
-/** LSTM English traineddata shipped in npm (avoids runtime fetch to jsdelivr; required under restricted egress). */
-function resolveLocalTesseractEngLangPath(): string {
-  try {
-    const pkg = require.resolve("@tesseract.js-data/eng/package.json");
-    return path.join(path.dirname(pkg), "4.0.0_best_int");
-  } catch {
-    return path.join(process.cwd(), "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int");
-  }
-}
 
 /** Positions 1–17 weights for check digit (1-based indexing in spec; we use 0-based here). */
 const VIN_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -231,38 +216,6 @@ export function findValidatedVinsInText(text: string): string[] {
     out.push(c.vin);
   }
   return out;
-}
-
-export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const textResult = await parser.getText();
-    return typeof textResult.text === "string" ? textResult.text : "";
-  } finally {
-    await parser.destroy();
-  }
-}
-
-/**
- * OCR for PNG/JPEG; may be slow on large images. Caller should enforce timeout.
- * Uses vendored `@tesseract.js-data/eng` so workers do not fetch traineddata from a public CDN (breaks with PRIVATE_RANGES_ONLY egress).
- */
-export async function extractTextFromImageBuffer(buffer: Buffer): Promise<string> {
-  const { createWorker, OEM } = await import("tesseract.js");
-  const langPath = resolveLocalTesseractEngLangPath();
-  const worker = await createWorker("eng", OEM.LSTM_ONLY, {
-    langPath,
-    cacheMethod: "none",
-  });
-  try {
-    const {
-      data: { text },
-    } = await worker.recognize(buffer);
-    return typeof text === "string" ? text : "";
-  } finally {
-    await worker.terminate();
-  }
 }
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = "Operation"): Promise<T> {
