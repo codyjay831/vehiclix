@@ -1,4 +1,63 @@
+import {
+  isIntakePlaceholderIdentityPair,
+  isIntakePlaceholderPriceValue,
+} from "@/lib/intake-draft-placeholders";
+
 const VIN_TAIL_CHARS = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789";
+
+function isPlaceholderColor(value: unknown): boolean {
+  const t = String(value ?? "").trim().toUpperCase();
+  return t === "" || t === "TBD" || t === "N/A" || t === "UNKNOWN";
+}
+
+/**
+ * Human-readable checklist after document intake (VIN decode + optional AI), excluding price automation.
+ */
+export function computeIntakeStillNeededLabels(params: {
+  vin: string;
+  make: string;
+  model: string;
+  mileage: number;
+  exteriorColor: string;
+  interiorColor: string;
+  price: number | "";
+  decodeFailed: boolean;
+  isEdit: boolean;
+  photosCount: number;
+}): string[] {
+  const out: string[] = [];
+  const vin = (params.vin || "").trim().toUpperCase();
+  if (vin.length !== 17 || /^0INTAKE/.test(vin)) {
+    out.push("Valid retail VIN (17 characters)");
+  }
+  if (params.decodeFailed) {
+    out.push("Vehicle identity (VIN decode failed — verify VIN or enter year/make/model manually)");
+  }
+  if (isIntakePlaceholderIdentityPair(params.make, params.model)) {
+    out.push("Make and model (confirm decoder output)");
+  }
+  if (params.mileage === 0 || params.mileage == null || Number.isNaN(params.mileage)) {
+    out.push("Mileage");
+  }
+  if (isPlaceholderColor(params.exteriorColor)) {
+    out.push("Exterior color");
+  }
+  if (isPlaceholderColor(params.interiorColor)) {
+    out.push("Interior color");
+  }
+  const pr = params.price;
+  const priceUnset =
+    pr === "" ||
+    pr === undefined ||
+    (typeof pr === "number" && (Number.isNaN(pr) || isIntakePlaceholderPriceValue(pr)));
+  if (priceUnset) {
+    out.push("Listing price (manual)");
+  }
+  if (!params.isEdit && params.photosCount < 1) {
+    out.push("At least one photo");
+  }
+  return out;
+}
 
 export function isProvisionalIntakeVin(vin: string): boolean {
   const v = vin.trim().toUpperCase();

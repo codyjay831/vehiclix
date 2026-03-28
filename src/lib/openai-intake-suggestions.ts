@@ -11,7 +11,10 @@ import { withTimeout } from "@/lib/vin-extraction";
 const MAX_DOC_CHARS = 14_000;
 const OPENAI_MS = 45_000;
 
-/** Strict JSON Schema for Chat Completions structured output (subset supported by OpenAI). */
+/**
+ * Strict JSON Schema for Chat Completions structured output.
+ * Supporting fields only — never VIN, year, make, model, trim, price, transmission, drivetrain, or public listing copy.
+ */
 const INTAKE_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -28,13 +31,6 @@ const INTAKE_SCHEMA = {
     },
     title_status_confidence: { type: "number" },
     title_notes: { type: "string" },
-    transmission_suggestion: { type: "string" },
-    transmission_confidence: { type: "number" },
-    drivetrain_suggestion: {
-      type: "string",
-      enum: ["AWD", "RWD", "FWD", "NONE"],
-    },
-    drivetrain_confidence: { type: "number" },
     condition_notes_draft: { type: "string" },
     condition_notes_confidence: { type: "number" },
     internal_notes_draft: { type: "string" },
@@ -60,10 +56,6 @@ const INTAKE_SCHEMA = {
     "title_status_hint",
     "title_status_confidence",
     "title_notes",
-    "transmission_suggestion",
-    "transmission_confidence",
-    "drivetrain_suggestion",
-    "drivetrain_confidence",
     "condition_notes_draft",
     "condition_notes_confidence",
     "internal_notes_draft",
@@ -73,10 +65,7 @@ const INTAKE_SCHEMA = {
   ],
 } as const;
 
-function normalizeSuggestions(
-  raw: Record<string, unknown>,
-  decoded: VinMetadata | null
-): VehicleIntakeAiSuggestions {
+function normalizeSuggestions(raw: Record<string, unknown>): VehicleIntakeAiSuggestions {
   const mileageRaw = raw.mileage;
   const mileage =
     typeof mileageRaw === "number" && mileageRaw >= 0 && mileageRaw < 2_000_000 ? mileageRaw : null;
@@ -98,26 +87,12 @@ function normalizeSuggestions(
       ? titleHintRaw
       : null;
 
-  const dtRaw = raw.drivetrain_suggestion;
-  const drivetrainSuggestion =
-    dtRaw === "AWD" || dtRaw === "RWD" || dtRaw === "FWD" ? dtRaw : null;
-
   const highlights = Array.isArray(raw.highlight_suggestions)
     ? (raw.highlight_suggestions as unknown[]).filter((x): x is string => typeof x === "string")
     : [];
   const features = Array.isArray(raw.feature_suggestions)
     ? (raw.feature_suggestions as unknown[]).filter((x): x is string => typeof x === "string")
     : [];
-
-  let transmissionSuggestion = emptyToNull(raw.transmission_suggestion);
-  let drivetrainOut: VehicleIntakeAiSuggestions["drivetrainSuggestion"] = drivetrainSuggestion;
-
-  if (decoded?.transmission) {
-    transmissionSuggestion = null;
-  }
-  if (decoded?.drivetrain) {
-    drivetrainOut = null;
-  }
 
   return {
     mileage,
@@ -132,12 +107,6 @@ function normalizeSuggestions(
     titleStatusConfidence:
       typeof raw.title_status_confidence === "number" ? raw.title_status_confidence : null,
     titleNotes: clip(emptyToNull(raw.title_notes), 2000),
-    transmissionSuggestion: clip(transmissionSuggestion, 80),
-    transmissionConfidence:
-      typeof raw.transmission_confidence === "number" ? raw.transmission_confidence : null,
-    drivetrainSuggestion: drivetrainOut,
-    drivetrainConfidence:
-      typeof raw.drivetrain_confidence === "number" ? raw.drivetrain_confidence : null,
     conditionNotesDraft: clip(emptyToNull(raw.condition_notes_draft), 2000),
     conditionNotesConfidence:
       typeof raw.condition_notes_confidence === "number" ? raw.condition_notes_confidence : null,
@@ -159,9 +128,13 @@ export async function fetchIntakeFieldSuggestionsFromOpenAI(
   const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
   const excerpt = documentPlainText.slice(0, MAX_DOC_CHARS);
 
-  const decoderHint = decoded
-    ? `VIN decoder already provided (do not contradict): transmission=${decoded.transmission ?? "none"}, drivetrain=${decoded.drivetrain ?? "none"}. If those are set, return NONE/empty for transmission_suggestion and drivetrain_suggestion.`
-    : "VIN decode did not return structured specs; you may suggest transmission and drivetrain if clearly stated in the document.";
+  const decoderContext =
+    decoded &&
+    (decoded.year != null ||
+      (decoded.make && decoded.make.trim()) ||
+      (decoded.model && decoded.model.trim()))
+      ? `Decoder context for disambiguation only (do not output these): year=${decoded.year ?? "?"}, make=${decoded.make ?? "?"}, model=${decoded.model ?? "?"}.`
+      : "No decoder context; still do not guess identity fields.";
 
   const openai = new OpenAI({
     apiKey,
@@ -176,18 +149,22 @@ export async function fetchIntakeFieldSuggestionsFromOpenAI(
       messages: [
         {
           role: "system",
-          content: `You extract vehicle listing fields from dealership document text (title, auction, registration). 
-Rules:
-- Never output or guess VIN, year, make, model, or trim.
-- Never output price or listing/marketing description.
-- mileage: use a non-negative integer only when the odometer is clearly stated; otherwise use -1 and mileage_confidence 0.
-- For uncertain fields use empty string or NONE enums and low confidence.
-- title_status_hint: NONE if unclear.
-- drivetrain_suggestion: NONE unless clearly stated and decoder did not already supply drivetrain.
-- transmission_suggestion: empty string unless clearly stated and decoder did not already supply transmission.
-- highlight_suggestions: short factual chips only (max 8), not ad copy.
-- feature_suggestions: optional equipment lines (max 12), not marketing.
-${decoderHint}`,
+          content: `You read dealership document text (title, auction sheet, registration) and return ONLY the JSON schema fields.
+
+Hard bans (never output or infer): VIN, year, make, model, trim, price, transmission, drivetrain, public listing description, ad copy, or marketing prose.
+
+Allowed outputs:
+- mileage: non-negative integer only if the odometer is explicitly stated in the text; otherwise mileage = -1 and mileage_confidence = 0.
+- exterior_color / interior_color: literal colors from the document; empty string if not stated. Use confidence 0–1; use <=0.3 when guessing from weak hints.
+- title_status_hint: CLEAN, SALVAGE, REBUILT, LEMON only when explicitly indicated; otherwise NONE. Never invent a branded title story.
+- title_notes: short factual phrases visible in the document (brands, lien, duplicate, etc.); empty if none.
+- condition_notes_draft / internal_notes_draft: concise factual notes from the document only; empty if nothing useful.
+- highlight_suggestions: up to 8 short factual chips (e.g. equipment), not slogans.
+- feature_suggestions: up to 12 optional equipment lines from the document, not sales copy.
+
+Confidence fields: 0.0 = unknown/not applicable; reserve values above 0.7 only when the text clearly states the fact.
+
+${decoderContext}`,
         },
         {
           role: "user",
@@ -217,5 +194,5 @@ ${decoderHint}`,
     return null;
   }
 
-  return normalizeSuggestions(parsed, decoded);
+  return normalizeSuggestions(parsed);
 }

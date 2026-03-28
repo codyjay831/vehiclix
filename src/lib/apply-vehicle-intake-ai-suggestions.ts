@@ -1,12 +1,10 @@
 /**
- * Client-safe Phase 2A/2B/2C intake merge:
- * - "Auto" suggestions: transmission, drivetrain only (fill-empty).
- * - Deferred: mileage, colors, notes, title, AI highlights, AI features (explicit Accept in UI).
- * Decoder highlights (engine/HP) still applied via applyVinMetadataToVehicleForm only.
+ * Client-safe intake merge for document AI:
+ * - No fields are auto-applied from AI (decoder + explicit Accept only).
+ * - Deferred review: mileage, colors, notes, title hints, highlight/feature suggestions (fill-empty rules).
  */
 
-import type { UseFormGetValues, UseFormSetValue } from "react-hook-form";
-import type { VinMetadata } from "@/lib/vin";
+import type { UseFormGetValues } from "react-hook-form";
 import type { TitleStatusHint, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 
 const isStringEmpty = (v: unknown) => v == null || v === undefined || !String(v ?? "").trim();
@@ -22,15 +20,13 @@ export type VehicleFormAiMergeShape = {
   mileage: number;
   exteriorColor: string;
   interiorColor: string;
-  transmission?: string | null;
-  drivetrain: string;
   conditionNotes?: string | null;
   internalNotes?: string | null;
   highlights?: string[];
   features?: string[];
 };
 
-/** AI suggestions awaiting explicit Accept (Phase 2B + 2C for list suggestions). */
+/** AI suggestions awaiting explicit Accept (never applied silently). */
 export type DeferredAiReviewFields = {
   mileage?: number;
   exteriorColor?: string;
@@ -38,7 +34,7 @@ export type DeferredAiReviewFields = {
   conditionNotes?: string;
   internalNotes?: string;
   title?: { statusHint: TitleStatusHint | null; notes: string | null };
-  /** Phase 2C: AI-suggested highlight chips (not decoder-derived). */
+  /** AI-suggested highlight chips (not decoder-derived). */
   highlightSuggestions?: string[];
   featureSuggestions?: string[];
 };
@@ -103,51 +99,16 @@ function buildDeferredReview<T extends VehicleFormAiMergeShape>(
 }
 
 /**
- * Apply only auto-merge AI fields (transmission, drivetrain). Phase 2C: no silent highlight/feature append.
+ * Builds deferred AI review items only. Does not write AI values into the form.
  */
-export function applyVehicleIntakeAiAutoSuggestions<T extends VehicleFormAiMergeShape>(
-  setValue: UseFormSetValue<T>,
-  getValues: UseFormGetValues<T>,
-  suggestions: VehicleIntakeAiSuggestions,
-  decodedSnapshot: VinMetadata | null
-): string[] {
-  const applied: string[] = [];
-
-  if (
-    !decodedSnapshot?.transmission &&
-    suggestions.transmissionSuggestion &&
-    isStringEmpty(getValues("transmission" as never))
-  ) {
-    setValue("transmission" as never, suggestions.transmissionSuggestion as never);
-    applied.push("transmission");
-  }
-
-  if (
-    !decodedSnapshot?.drivetrain &&
-    suggestions.drivetrainSuggestion &&
-    isStringEmpty(getValues("drivetrain" as never))
-  ) {
-    setValue("drivetrain" as never, suggestions.drivetrainSuggestion as never);
-    applied.push("drivetrain");
-  }
-
-  return applied;
-}
-
 export function applyIntakeAiWithDeferredReview<T extends VehicleFormAiMergeShape>(
-  setValue: UseFormSetValue<T>,
   getValues: UseFormGetValues<T>,
-  suggestions: VehicleIntakeAiSuggestions,
-  decodedSnapshot: VinMetadata | null
-): { deferred: DeferredAiReviewFields; autoAppliedKeys: string[] } {
-  const deferred = buildDeferredReview(suggestions, getValues);
-  const autoAppliedKeys = applyVehicleIntakeAiAutoSuggestions(
-    setValue,
-    getValues,
-    suggestions,
-    decodedSnapshot
-  );
-  return { deferred, autoAppliedKeys };
+  suggestions: VehicleIntakeAiSuggestions | null
+): { deferred: DeferredAiReviewFields } {
+  if (!suggestions) {
+    return { deferred: {} };
+  }
+  return { deferred: buildDeferredReview(suggestions, getValues) };
 }
 
 export function deferredAiReviewHasPending(d: DeferredAiReviewFields | null): boolean {

@@ -15,10 +15,6 @@ export type VehicleIntakeAiSuggestions = {
   titleStatusHint: TitleStatusHint | null;
   titleStatusConfidence: number | null;
   titleNotes: string | null;
-  transmissionSuggestion: string | null;
-  transmissionConfidence: number | null;
-  drivetrainSuggestion: "AWD" | "RWD" | "FWD" | null;
-  drivetrainConfidence: number | null;
   conditionNotesDraft: string | null;
   conditionNotesConfidence: number | null;
   internalNotesDraft: string | null;

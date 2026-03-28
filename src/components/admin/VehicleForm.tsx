@@ -68,7 +68,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { isProvisionalIntakeVin } from "@/lib/vehicle-intake-helpers";
+import {
+  computeIntakeStillNeededLabels,
+  isProvisionalIntakeVin,
+} from "@/lib/vehicle-intake-helpers";
 import { isValidVinCheckDigit } from "@/lib/vin-extraction";
 import {
   INTAKE_PLACEHOLDER_PRICE,
@@ -173,6 +176,32 @@ function diffDecoderFilledFields(before: Record<string, unknown>, after: Record<
   return keys;
 }
 
+const DECODER_FIELD_LABELS: Record<string, string> = {
+  year: "Year",
+  make: "Make",
+  model: "Model",
+  trim: "Trim",
+  drivetrain: "Drivetrain",
+  bodyStyle: "Body style",
+  fuelType: "Fuel type",
+  transmission: "Transmission",
+  doors: "Doors",
+  batteryCapacityKWh: "Battery (kWh)",
+  highlights: "Highlights",
+};
+
+function humanizeDecoderSummaryKeys(keys: string[]): string {
+  return keys.map((k) => DECODER_FIELD_LABELS[k] ?? k).join(", ");
+}
+
+/** Subtle hint when the model is less certain; omit when null or very high. */
+function formatAiConfidence(conf: number | null | undefined): string | null {
+  if (conf == null || Number.isNaN(conf)) return null;
+  if (conf >= 0.95) return null;
+  const pct = Math.round(Math.min(1, Math.max(0, conf)) * 100);
+  return `Model confidence ~${pct}%`;
+}
+
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters"),
   year: z.coerce.number().min(2010).max(new Date().getFullYear() + 1),
@@ -240,7 +269,6 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   );
   const lastIntakeDocumentIdRef = React.useRef<string | null>(null);
 
-  const [intakeAiAutoFields, setIntakeAiAutoFields] = React.useState<string[]>([]);
   const [intakeAiAcceptedFields, setIntakeAiAcceptedFields] = React.useState<string[]>([]);
   const [decoderFilledFields, setDecoderFilledFields] = React.useState<string[]>([]);
   const [deferredAiReview, setDeferredAiReview] = React.useState<DeferredAiReviewFields | null>(null);
@@ -248,7 +276,8 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     decodeFailed: boolean;
     aiMeta: VehicleIntakeAiMeta;
     aiSuggestions: VehicleIntakeAiSuggestions | null;
-    aiAutoFilledFieldKeys: string[];
+    /** Decoder-filled keys from this intake merge only (for summary bucket). */
+    intakeDecoderFilledKeys: string[];
   } | null>(null);
 
   const form = useForm<VehicleFormValues>({
@@ -303,19 +332,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       const decoderKeys = diffDecoderFilledFields(beforeDecoder, afterDecoder);
       setDecoderFilledFields(decoderKeys);
 
-      let autoKeys: string[] = [];
       let deferred: DeferredAiReviewFields = {};
       if (payload.aiSuggestions) {
-        const r = applyIntakeAiWithDeferredReview(
-          form.setValue,
-          form.getValues,
-          payload.aiSuggestions,
-          payload.decoded
-        );
+        const r = applyIntakeAiWithDeferredReview(form.getValues, payload.aiSuggestions);
         deferred = r.deferred;
-        autoKeys = r.autoAppliedKeys;
       }
-      setIntakeAiAutoFields(autoKeys);
       setIntakeAiAcceptedFields([]);
       setDeferredAiReview(deferredAiReviewHasPending(deferred) ? deferred : null);
 
@@ -332,20 +353,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         decoderUpdates,
         docId ?? undefined
       );
-      const autoUpdates = Object.fromEntries(
-        autoKeys.map((k) => [k, { source: "ai_auto" as const, acceptedAt: now }])
-      );
-      intakeProvenanceRef.current = mergeIntakeProvenanceFields(
-        intakeProvenanceRef.current,
-        autoUpdates,
-        undefined
-      );
-
       setLastIntakeSummary({
         decodeFailed: payload.decodeFailed,
         aiMeta: payload.aiMeta,
         aiSuggestions: payload.aiSuggestions,
-        aiAutoFilledFieldKeys: autoKeys,
+        intakeDecoderFilledKeys: decoderKeys,
       });
 
       const hasDeferred = deferredAiReviewHasPending(deferred);
@@ -355,12 +367,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         );
       } else if (hasDeferred) {
         toast.success(
-          "VIN decode applied. Approve or reject each document AI suggestion in the intake summary before saving."
+          "VIN decode applied. Review AI suggestions in the intake summary — accept or reject each before saving."
         );
-      } else if (autoKeys.length > 0 || decoderKeys.length > 0) {
-        toast.success(
-          "VIN decode and auto document suggestions applied to empty fields. Review labels before saving."
-        );
+      } else if (decoderKeys.length > 0) {
+        toast.success("VIN decode filled empty fields from your document. Review before saving.");
       } else {
         toast.success("VIN and vehicle details were applied from your document. Review before saving.");
       }
@@ -477,6 +487,21 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     "exteriorColor", "interiorColor", "condition", "titleStatus", "price",
     "description", "highlights",
   ]);
+  const intakeStillNeededLabels =
+    lastIntakeSummary != null
+      ? computeIntakeStillNeededLabels({
+          vin: watched[0] || "",
+          make: String(watched[2] ?? ""),
+          model: String(watched[3] ?? ""),
+          mileage: Number(watched[4]),
+          exteriorColor: String(watched[6] ?? ""),
+          interiorColor: String(watched[7] ?? ""),
+          price: watched[10] as number | "",
+          decodeFailed: lastIntakeSummary.decodeFailed,
+          isEdit,
+          photosCount: photos.length,
+        })
+      : [];
   const yearNum = Number(watched[1]);
   const yearPlausible = !Number.isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear() + 1;
   const section1Complete = Boolean(
@@ -536,7 +561,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   };
 
   const intakeFieldReviewClass = (field: string) => {
-    const aiMarked = intakeAiAutoFields.includes(field) || intakeAiAcceptedFields.includes(field);
+    const aiMarked = intakeAiAcceptedFields.includes(field);
     if (aiMarked) return "ring-2 ring-amber-400/60 border-amber-500/40";
     if (decoderFilledFields.includes(field)) return "ring-2 ring-sky-400/50 border-sky-500/35";
     return "";
@@ -629,19 +654,30 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   };
   const acceptDeferredTitle = () => {
     const t = deferredAiReview?.title;
-    if (t?.statusHint) {
+    if (!t) return;
+    const acceptedKeys: string[] = [];
+    if (t.statusHint) {
       form.setValue("titleStatus", t.statusHint);
       bumpAiAcceptedProvenance("titleStatus");
-      void logIntakeReviewEventAction({ action: "accept", fieldGroup: "title" });
-    } else {
-      void logIntakeReviewEventAction({ action: "reject", fieldGroup: "title" });
+      acceptedKeys.push("titleStatus");
     }
+    const notes = t.notes?.trim();
+    if (notes) {
+      const cur = (form.getValues("internalNotes") || "").trim();
+      const block = `Title document (AI suggestion): ${notes}`;
+      form.setValue("internalNotes", cur ? `${cur}\n\n${block}` : block);
+      bumpAiAcceptedProvenance("internalNotes");
+      acceptedKeys.push("internalNotes");
+    }
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "title" });
     stripDeferredPartial((d) => {
       const n = { ...d };
       delete n.title;
       return n;
     });
-    if (t?.statusHint) setIntakeAiAcceptedFields((p) => [...new Set([...p, "titleStatus"])]);
+    if (acceptedKeys.length > 0) {
+      setIntakeAiAcceptedFields((p) => [...new Set([...p, ...acceptedKeys])]);
+    }
   };
 
   const acceptDeferredHighlights = () => {
@@ -715,12 +751,6 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       bits.push(
         <Badge key="acc" variant="outline" className="text-[10px] font-normal shrink-0">
           AI suggested · Needs review
-        </Badge>
-      );
-    } else if (intakeAiAutoFields.includes(field)) {
-      bits.push(
-        <Badge key="auto" variant="outline" className="text-[10px] font-normal shrink-0">
-          AI suggested (auto) · Needs review
         </Badge>
       );
     }
@@ -827,7 +857,6 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     const current = (form.getValues("vin") || "").trim().toUpperCase();
     setPendingVinIntake(null);
     setLastIntakeSummary(null);
-    setIntakeAiAutoFields([]);
     setIntakeAiAcceptedFields([]);
     setDecoderFilledFields([]);
     setDeferredAiReview(null);
@@ -1108,61 +1137,71 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <div className="rounded-lg border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/25 p-4 space-y-4 text-sm">
                 <p className="font-semibold text-foreground">Document intake summary (review required)</p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  VIN was set from your upload and NHTSA decode has already run for that VIN (empty fields only).
+                  VIN was set from your upload. NHTSA decode runs for that VIN and only fills empty identity fields.
                   Change the VIN and use <span className="font-medium text-foreground">Re-run decode</span> if you need a
                   fresh decode.
                 </p>
-                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-                  <li>
-                    <span className="text-foreground font-medium">Legend: </span>
-                    <Badge variant="secondary" className="text-[10px] mx-1">
-                      From decoder · Needs review
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px] mx-1 border-amber-600/40">
-                      AI suggested · Pending accept
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px] mx-1">
-                      AI suggested · Needs review
-                    </Badge>
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">VIN decode: </span>
-                    {lastIntakeSummary.decodeFailed
-                      ? "NHTSA decode failed — fill identity fields manually if needed."
-                      : decoderFilledFields.length > 0
-                        ? `Filled empty fields: ${decoderFilledFields.join(", ")}.`
-                        : "No decoder fields were empty to fill."}
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">Document AI: </span>
-                    {lastIntakeSummary.aiMeta.status === "applied"
-                      ? "Model returned structured suggestions. Primary fields below need explicit Accept unless auto-applied."
-                      : lastIntakeSummary.aiMeta.status === "skipped" &&
-                          lastIntakeSummary.aiMeta.reason === "no_api_key"
-                        ? "Skipped — set OPENAI_API_KEY to enable optional document field suggestions."
-                        : lastIntakeSummary.aiMeta.status === "skipped" &&
-                            lastIntakeSummary.aiMeta.reason === "openai_error"
-                          ? `Skipped — ${lastIntakeSummary.aiMeta.message || "OpenAI request failed."}`
-                          : "Skipped."}
-                  </li>
-                  {lastIntakeSummary.aiAutoFilledFieldKeys.length > 0 && (
-                    <li>
-                      <span className="text-foreground font-medium">AI auto-applied (transmission & drivetrain only): </span>
-                      {lastIntakeSummary.aiAutoFilledFieldKeys.join(", ")}
-                    </li>
-                  )}
-                </ul>
 
-                {deferredAiReview && deferredAiReviewHasPending(deferredAiReview) ? (
-                  <div className="border-t border-amber-500/25 pt-3 space-y-3">
+                <div className="grid gap-3">
+                  <div className="rounded-md border border-sky-500/30 bg-sky-50/50 dark:bg-sky-950/20 p-3 space-y-2">
                     <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
-                      Approve AI suggestions (primary fields)
+                      1 · Auto-filled from VIN and documents
                     </p>
+                    <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+                      <li>
+                        <span className="font-medium text-foreground">VIN </span>
+                        was taken from your uploaded document.
+                      </li>
+                      {lastIntakeSummary.decodeFailed ? (
+                        <li>
+                          <span className="font-medium text-foreground">Decode: </span>
+                          NHTSA did not return structured data — enter year, make, model, and other identity fields
+                          manually if needed.
+                        </li>
+                      ) : lastIntakeSummary.intakeDecoderFilledKeys.length > 0 ? (
+                        <li>
+                          <span className="font-medium text-foreground">Decoder: </span>
+                          Filled empty fields:{" "}
+                          {humanizeDecoderSummaryKeys(lastIntakeSummary.intakeDecoderFilledKeys)}.
+                        </li>
+                      ) : (
+                        <li>
+                          <span className="font-medium text-foreground">Decoder: </span>
+                          No decoder-backed fields were empty to fill (values already matched or NHTSA did not supply
+                          them).
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-md border border-violet-500/30 bg-violet-50/40 dark:bg-violet-950/20 p-3 space-y-3">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                      2 · AI suggestions for review
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {lastIntakeSummary.aiMeta.status === "applied"
+                        ? "Supporting fields only (mileage, colors, notes, title clues, chips). Nothing is saved until you tap Accept — the model does not change VIN, identity, or price."
+                        : lastIntakeSummary.aiMeta.status === "skipped" &&
+                            lastIntakeSummary.aiMeta.reason === "no_api_key"
+                          ? "Document AI was skipped — OPENAI_API_KEY is not set. Intake still completed; VIN extraction and decode ran normally."
+                          : lastIntakeSummary.aiMeta.status === "skipped" &&
+                              lastIntakeSummary.aiMeta.reason === "openai_error"
+                            ? `Document AI was skipped (${lastIntakeSummary.aiMeta.message || "request failed"}). Intake still completed; suggestions are unavailable for this upload.`
+                            : "Document AI was skipped for this upload."}
+                    </p>
+
+                    {deferredAiReview && deferredAiReviewHasPending(deferredAiReview) ? (
+                      <div className="space-y-3">
                     {deferredAiReview.mileage != null ? (
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
                         <span className="text-xs">
                           <span className="font-medium text-foreground">Mileage: </span>
                           {deferredAiReview.mileage.toLocaleString()} mi
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.mileageConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.mileageConfidence)}
+                            </span>
+                          ) : null}
                         </span>
                         <div className="flex gap-2">
                           <Button type="button" size="sm" variant="default" className="h-8" onClick={acceptDeferredMileage}>
@@ -1192,6 +1231,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                         <span className="text-xs">
                           <span className="font-medium text-foreground">Exterior color: </span>
                           {deferredAiReview.exteriorColor}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.exteriorColorConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.exteriorColorConfidence)}
+                            </span>
+                          ) : null}
                         </span>
                         <div className="flex gap-2">
                           <Button type="button" size="sm" className="h-8" onClick={acceptDeferredExterior}>
@@ -1221,6 +1265,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                         <span className="text-xs">
                           <span className="font-medium text-foreground">Interior color: </span>
                           {deferredAiReview.interiorColor}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.interiorColorConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.interiorColorConfidence)}
+                            </span>
+                          ) : null}
                         </span>
                         <div className="flex gap-2">
                           <Button type="button" size="sm" className="h-8" onClick={acceptDeferredInterior}>
@@ -1248,6 +1297,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                     {deferredAiReview.conditionNotes ? (
                       <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
                         <span className="text-xs font-medium text-foreground">Condition notes</span>
+                        {formatAiConfidence(lastIntakeSummary.aiSuggestions?.conditionNotesConfidence) ? (
+                          <span className="text-[10px] text-muted-foreground -mt-1">
+                            {formatAiConfidence(lastIntakeSummary.aiSuggestions?.conditionNotesConfidence)}
+                          </span>
+                        ) : null}
                         <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">
                           {deferredAiReview.conditionNotes}
                         </p>
@@ -1277,6 +1331,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                     {deferredAiReview.internalNotes ? (
                       <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
                         <span className="text-xs font-medium text-foreground">Internal notes</span>
+                        {formatAiConfidence(lastIntakeSummary.aiSuggestions?.internalNotesConfidence) ? (
+                          <span className="text-[10px] text-muted-foreground -mt-1">
+                            {formatAiConfidence(lastIntakeSummary.aiSuggestions?.internalNotesConfidence)}
+                          </span>
+                        ) : null}
                         <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">
                           {deferredAiReview.internalNotes}
                         </p>
@@ -1306,6 +1365,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                     {deferredAiReview.title ? (
                       <div className="flex flex-col gap-2 rounded-md border bg-background/60 p-3">
                         <span className="text-xs font-medium text-foreground">Title status / notes</span>
+                        {formatAiConfidence(lastIntakeSummary.aiSuggestions?.titleStatusConfidence) ? (
+                          <span className="text-[10px] text-muted-foreground -mt-1">
+                            {formatAiConfidence(lastIntakeSummary.aiSuggestions?.titleStatusConfidence)}
+                          </span>
+                        ) : null}
                         {deferredAiReview.title.statusHint ? (
                           <p className="text-xs text-muted-foreground">
                             Suggested status:{" "}
@@ -1319,9 +1383,17 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                             {deferredAiReview.title.notes}
                           </p>
                         ) : null}
+                        <p className="text-[10px] text-muted-foreground">
+                          Accept applies title status when shown, and appends title notes to internal notes (does not
+                          replace existing internal notes).
+                        </p>
                         <div className="flex flex-wrap gap-2">
                           <Button type="button" size="sm" className="h-8" onClick={acceptDeferredTitle}>
-                            {deferredAiReview.title.statusHint ? "Accept title status" : "Dismiss"}
+                            {deferredAiReview.title.statusHint && deferredAiReview.title.notes?.trim()
+                              ? "Accept status & notes"
+                              : deferredAiReview.title.statusHint
+                                ? "Accept title status"
+                                : "Accept (append notes to internal notes)"}
                           </Button>
                           <Button
                             type="button"
@@ -1405,7 +1477,45 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       </div>
                     ) : null}
                   </div>
-                ) : null}
+                    ) : lastIntakeSummary.aiMeta.status === "applied" ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        No AI suggestions are waiting — the model had nothing to add, or your form already had values in
+                        those fields.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-md border border-amber-700/25 bg-background/80 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                      3 · Still needed from you
+                    </p>
+                    {intakeStillNeededLabels.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No required gaps flagged from this checklist — still verify identity, photos, and listing price
+                        before publishing.
+                      </p>
+                    ) : (
+                      <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+                        {intakeStillNeededLabels.map((label) => (
+                          <li key={label}>{label}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground border-t border-amber-500/20 pt-3">
+                  <span className="font-medium text-foreground">Field legend: </span>
+                  <Badge variant="secondary" className="text-[10px] mx-1">
+                    From decoder · Needs review
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] mx-1 border-amber-600/40">
+                    AI suggested · Pending accept
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] mx-1">
+                    AI suggested · Needs review
+                  </Badge>
+                </p>
               </div>
             )}
 
