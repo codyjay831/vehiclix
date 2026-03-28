@@ -1,9 +1,9 @@
 /**
  * Server-only OpenAI call for Phase 2A intake field suggestions.
- * No OpenAI imports in client bundles.
+ * SDK is loaded with dynamic import() so the `openai` package is not evaluated at module load time
+ * (avoids serverless/bundler issues and keeps GET routes from pulling the full client graph).
  */
 
-import OpenAI from "openai";
 import type { VinMetadata } from "@/lib/vin";
 import type { VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { withTimeout } from "@/lib/vin-extraction";
@@ -124,6 +124,14 @@ export async function fetchIntakeFieldSuggestionsFromOpenAI(
 ): Promise<VehicleIntakeAiSuggestions | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
+
+  let OpenAI: (typeof import("openai"))["default"];
+  try {
+    ({ default: OpenAI } = await import("openai"));
+  } catch (e) {
+    console.error("[intake] openai package failed to load (degrading to decode-only):", e);
+    return null;
+  }
 
   const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
   const excerpt = documentPlainText.slice(0, MAX_DOC_CHARS);

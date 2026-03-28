@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "@google-cloud/cloud-sql-connector",
     "pdf-parse",
     "tesseract.js",
+    "openai",
   ],
   deploymentId: process.env.NEXT_DEPLOYMENT_ID || undefined,
   images: {
