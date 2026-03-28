@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -90,9 +91,20 @@ async function ensurePdfJsNodePolyfills(): Promise<void> {
   pdfJsNodePolyfillsApplied = true;
 }
 
+/**
+ * pdf.js Node path uses a "fake worker" that dynamic-imports workerSrc. Default `./pdf.worker.mjs`
+ * resolves next to pdf.mjs; standalone traces can omit that file — use an absolute file URL.
+ */
+function setPdfJsWorkerSrcAbsolute(pdfParseMod: typeof import("pdf-parse")): void {
+  const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  pdfParseMod.PDFParse.setWorker(pathToFileURL(workerPath).href);
+}
+
 export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   await ensurePdfJsNodePolyfills();
-  const { PDFParse } = await import("pdf-parse");
+  const pdfParseMod = await import("pdf-parse");
+  setPdfJsWorkerSrcAbsolute(pdfParseMod);
+  const { PDFParse } = pdfParseMod;
   const parser = new PDFParse({ data: buffer });
   try {
     const textResult = await parser.getText();
