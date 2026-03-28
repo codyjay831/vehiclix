@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed",
     "db:seed:demo": "npx prisma db seed",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
     "validate:support-mode": "tsx scripts/enforce-support-mode.ts",
     "guard:public-org-id": "tsx scripts/guards/no-client-organization-id-in-public-api.ts",
     "guard:storefront-bypass": "tsx scripts/guards/storefront-api-bypass-report.ts",

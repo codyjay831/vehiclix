@@ -56,6 +56,48 @@ Next.js Server Actions require a stable encryption key in production to prevent 
 
 ---
 
+## 3b. Production schema migrations (Prisma `P2022` / “column does not exist”)
+
+Firebase App Hosting **does not** automatically run `prisma migrate deploy`. If production code is newer than the Cloud SQL schema, admin routes that query `Vehicle` (and similar) can throw **Prisma `P2022`**: *column does not exist*. That is **not** fixed by redeploying alone; the **production** database must receive pending migrations.
+
+### Rules
+
+1. **`npx prisma migrate deploy` uses `DATABASE_URL` from your shell** (or `.env` via `prisma.config.ts`). It does **not** read Firebase Console by itself. If the log shows `127.0.0.1` and `evomotors_db`, you only updated **local** Postgres — not Cloud SQL.
+2. **`DATABASE_URL` must be a single line** with no spaces or line breaks inside the value. In the console, it should look exactly like:  
+   `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public`
+3. **Password URL encoding**: If the password contains `@`, `:`, `/`, `#`, `?`, `%`, or spaces, encode them for the URL (e.g. `@` → `%40`). Otherwise Prisma returns **P1013** (invalid URL / port).
+4. **Private IP hosts (`10.x`, `172.16.x`, etc.)**: Your laptop **cannot** reach Cloud SQL’s private IP without **Cloud SQL Auth Proxy** (or an equivalent VPN / bastion). Putting `10.x` in `DATABASE_URL` is correct for **Cloud Run inside the VPC**; from home you must proxy to `127.0.0.1:<localPort>` and point `DATABASE_URL` there for CLI commands.
+
+### Recommended: migrate from your machine via Cloud SQL Auth Proxy
+
+1. Install [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy) and authenticate (`gcloud auth application-default login` or a service account with **Cloud SQL Client**).
+2. Start the proxy against your instance (example; use your real `project:region:instance`):
+
+   ```bash
+   cloud-sql-proxy --private-ip --port 6543 PROJECT_ID:REGION:INSTANCE_NAME
+   ```
+
+3. In **another** terminal, set `DATABASE_URL` to **localhost + proxy port** (use your real password; encode special characters):
+
+   ```powershell
+   $env:DATABASE_URL = "postgresql://postgres:YOUR_PASSWORD@127.0.0.1:6543/vehiclix?schema=public"
+   npx prisma migrate deploy
+   npx prisma migrate status
+   ```
+
+4. Confirm the first line of output shows **`vehiclix` at `127.0.0.1:6543`** (or your chosen port), **not** `evomotors_db` on `5432`, before trusting the result.
+
+### Runtime vs CLI (`USE_CLOUD_SQL_CONNECTOR`)
+
+- If **`USE_CLOUD_SQL_CONNECTOR=true`** in Firebase, the **running app** can use the connector + `DB_PASSWORD` instead of `DATABASE_URL` for the DB pool. **Prisma CLI** still needs a reachable `DATABASE_URL` when you run `migrate deploy` (typically via the proxy URL above).
+- If **`USE_CLOUD_SQL_CONNECTOR` is not `true`**, the app uses **`DATABASE_URL`** at runtime; it must be reachable from Cloud Run (private IP + VPC, as configured in `apphosting.yaml`).
+
+### Stripe
+
+`STRIPE_SECRET_KEY` should be a **live** secret key in real production billing; a `sk_test_…` placeholder skips real charges but is not a substitute for production configuration.
+
+---
+
 ## 4. Custom Domain Setup (vehiclix.app)
 
 1.  In Firebase Console: **App Hosting** > **Settings** > **Custom Domains**.
