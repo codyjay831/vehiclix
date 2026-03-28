@@ -153,6 +153,7 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
         features,
         internalNotes,
       },
+      select: { id: true },
     });
 
     await logAuditEvent({
@@ -213,6 +214,7 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
     await tx.vehicle.update({
       where: { id: vehicleId },
       data: { vehicleStatus: newStatus },
+      select: { id: true },
     });
 
     await logAuditEvent({
@@ -355,6 +357,7 @@ export async function createVehicleAction(formData: FormData) {
     await tx.vehicle.update({
       where: { id: vehicle.id },
       data: { slug },
+      select: { id: true },
     });
 
     // Create audit event
