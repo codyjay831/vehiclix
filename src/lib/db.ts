@@ -3,8 +3,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { Connector, IpAddressTypes } from "@google-cloud/cloud-sql-connector";
 
-/** Cloud SQL instance connection name (project:region:instance). */
-const INSTANCE_CONNECTION_NAME = "vehiclix-f8be6:us-east4:vehiclix-db";
+/** Legacy fallback; prefer CLOUD_SQL_INSTANCE_CONNECTION_NAME or INSTANCE_CONNECTION_NAME env vars. */
+const DEFAULT_INSTANCE_CONNECTION_NAME = "vehiclix-f8be6:us-east4:vehiclix-db";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -24,16 +24,22 @@ async function createPrismaClient(): Promise<PrismaClient> {
     if (!password) {
       throw new Error("DB_PASSWORD is required when USE_CLOUD_SQL_CONNECTOR=true");
     }
+    const instanceConnectionName =
+      process.env.CLOUD_SQL_INSTANCE_CONNECTION_NAME ||
+      process.env.INSTANCE_CONNECTION_NAME ||
+      DEFAULT_INSTANCE_CONNECTION_NAME;
+    const user = process.env.DB_USER || "postgres";
+    const database = process.env.DB_NAME || process.env.POSTGRES_DB || "vehiclix";
     const connector = new Connector();
     const clientOpts = await connector.getOptions({
-      instanceConnectionName: INSTANCE_CONNECTION_NAME,
+      instanceConnectionName,
       ipType: IpAddressTypes.PRIVATE,
     });
     pool = new Pool({
       ...clientOpts,
-      user: "postgres",
+      user,
       password,
-      database: "vehiclix",
+      database,
     });
   } else {
     const connectionString = process.env.DATABASE_URL;

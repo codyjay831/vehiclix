@@ -8,7 +8,10 @@ This document provides instructions for deploying the Vehiclix platform to Googl
 |----------|------|---------|-------------|
 | `DATABASE_URL` | Secret | PostgreSQL URL for **local dev**, **Prisma CLI** (`migrate`, `studio`), and **optional** build-time tools. Not used at **runtime** when the Cloud SQL connector is enabled. | **YES** (for CLI/dev) |
 | `USE_CLOUD_SQL_CONNECTOR` | Secret/Public | Set to `true` in **production runtime** to connect via `@google-cloud/cloud-sql-connector` (private IP) instead of `DATABASE_URL`. Omit or not `true` locally. | **YES** (prod runtime) |
+| `CLOUD_SQL_INSTANCE_CONNECTION_NAME` | Secret/Public | Cloud SQL instance name (`project:region:instance`). Used by runtime connector; avoids hardcoded instance drift. | **YES** (prod runtime connector) |
 | `DB_PASSWORD` | Secret | Postgres password when `USE_CLOUD_SQL_CONNECTOR=true` (runtime). Do not embed in `DATABASE_URL` for that mode. | **YES** (with connector) |
+| `DB_USER` | Secret/Public | Postgres user for runtime connector. Defaults to `postgres` if unset. | Optional |
+| `DB_NAME` | Secret/Public | Postgres database for runtime connector. Defaults to `vehiclix` if unset. | Optional |
 | `DIRECT_URL` | Secret | Legacy/doc name; this repo’s Prisma 7 config uses `DATABASE_URL` only for CLI. Safe to align with `DATABASE_URL` if you use a direct URL for migrations. | Optional |
 | `AUTH_SECRET` | Secret | Random string for signing session JWTs. | **YES** |
 | `STRIPE_SECRET_KEY` | Secret | Your production Stripe secret key. | **YES** |

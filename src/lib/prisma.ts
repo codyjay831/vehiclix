@@ -1,12 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { db } from "@/lib/db";
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient();
-
-if (process.env.NODE_ENV !== "production")
-  globalForPrisma.prisma = prisma;
+/**
+ * Keep all call sites on a single runtime DB client to prevent
+ * production drift between "@/lib/prisma" and "@/lib/db".
+ */
+export const prisma = db;
