@@ -5,6 +5,9 @@ node_modules
 .cursor/
 /src/generated/prisma
 
+# Local Cloud SQL Auth Proxy binary (download via script or manually)
+tools/cloud-sql-proxy.exe
+
 storage/
 # Allow src/lib/storage (provider implementation)
 !src/lib/storage/

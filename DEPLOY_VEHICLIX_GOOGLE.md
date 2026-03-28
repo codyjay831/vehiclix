@@ -87,6 +87,23 @@ Firebase App Hosting **does not** automatically run `prisma migrate deploy`. If 
 
 4. Confirm the first line of output shows **`vehiclix` at `127.0.0.1:6543`** (or your chosen port), **not** `evomotors_db` on `5432`, before trusting the result.
 
+### One-shot script (Windows)
+
+Prerequisite: **Application Default Credentials** — install the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), then:
+
+```bash
+gcloud auth application-default login
+```
+
+Set a migrate URL (use your real password; URL-encode special characters if needed):
+
+```powershell
+$env:MIGRATE_DATABASE_URL = "postgresql://postgres:YOUR_PASSWORD@127.0.0.1:6543/vehiclix?schema=public"
+powershell -ExecutionPolicy Bypass -File .\scripts\run-production-migrate.ps1
+```
+
+The script downloads `tools/cloud-sql-proxy.exe` if missing, starts the proxy, runs `prisma migrate deploy` and `migrate status`, then stops the proxy.
+
 ### Runtime vs CLI (`USE_CLOUD_SQL_CONNECTOR`)
 
 - If **`USE_CLOUD_SQL_CONNECTOR=true`** in Firebase, the **running app** can use the connector + `DB_PASSWORD` instead of `DATABASE_URL` for the DB pool. **Prisma CLI** still needs a reachable `DATABASE_URL` when you run `migrate deploy` (typically via the proxy URL above).
