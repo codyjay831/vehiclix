@@ -16,13 +16,20 @@ import { getAuthenticatedUser, requireUserWithOrg, validateRecordOwnership } fro
 import { requireWriteAccess } from "@/lib/support";
 import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
 import { parseIntakeFieldProvenanceJson } from "@/lib/intake-field-provenance";
+import { INTAKE_PLACEHOLDER_PRICE } from "@/lib/intake-draft-placeholders";
 
 function parseProvenanceFromFormData(formData: FormData): Prisma.InputJsonValue | undefined {
   const raw = formData.get("intakeFieldProvenance");
   if (typeof raw !== "string" || !raw.trim()) return undefined;
   const parsed = parseIntakeFieldProvenanceJson(raw);
   if (!parsed) return undefined;
-  if (Object.keys(parsed.fields).length === 0 && !parsed.documentId) return undefined;
+  if (
+    Object.keys(parsed.fields).length === 0 &&
+    !parsed.documentId &&
+    parsed.intakePlaceholderPrice !== true
+  ) {
+    return undefined;
+  }
   return parsed as unknown as Prisma.InputJsonValue;
 }
 
@@ -68,7 +75,7 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
   
   const vehicle = await db.vehicle.findFirst({
     where: { id: vehicleId, organizationId: user.organizationId },
-    select: { vehicleStatus: true, organizationId: true },
+    select: { vehicleStatus: true, organizationId: true, intakeFieldProvenance: true },
   });
 
   if (!vehicle) {
@@ -134,7 +141,27 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
     throw new Error("A vehicle with this VIN already exists");
   }
 
-  const intakeFieldProvenance = parseProvenanceFromFormData(formData);
+  const intakeFieldProvenanceFromForm = parseProvenanceFromFormData(formData);
+  const existingProv = parseIntakeFieldProvenanceJson(vehicle.intakeFieldProvenance ?? null);
+  const priceNum = Number(price.toFixed(2));
+  const mustClearIntakePlaceholderPrice =
+    !Number.isNaN(priceNum) &&
+    priceNum !== INTAKE_PLACEHOLDER_PRICE &&
+    existingProv?.intakePlaceholderPrice === true;
+
+  let intakeFieldProvenance: Prisma.InputJsonValue | undefined = intakeFieldProvenanceFromForm;
+  if (mustClearIntakePlaceholderPrice) {
+    const base =
+      intakeFieldProvenanceFromForm != null
+        ? { ...(intakeFieldProvenanceFromForm as Record<string, unknown>) }
+        : existingProv != null
+          ? { ...existingProv }
+          : { v: 1, documentId: null, fields: {} };
+    intakeFieldProvenance = {
+      ...base,
+      intakePlaceholderPrice: false,
+    } as unknown as Prisma.InputJsonValue;
+  }
 
   await db.$transaction(async (tx) => {
     const updatedVehicle = await tx.vehicle.update({
@@ -200,7 +227,7 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
 
   const vehicle = await db.vehicle.findFirst({
     where: { id: vehicleId, organizationId: user.organizationId },
-    select: { vehicleStatus: true, organizationId: true },
+    select: { vehicleStatus: true, organizationId: true, price: true, intakeFieldProvenance: true },
   });
 
   if (!vehicle) {
@@ -215,6 +242,16 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
 
   if (!allowedStatuses.includes(newStatus)) {
     throw new Error(`Status ${newStatus} is not a valid target for manual transition.`);
+  }
+
+  if (newStatus === "LISTED" && vehicle.vehicleStatus === "DRAFT") {
+    const prov = parseIntakeFieldProvenanceJson(vehicle.intakeFieldProvenance ?? null);
+    const priceIsPlaceholder =
+      prov?.intakePlaceholderPrice === true &&
+      vehicle.price.equals(new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE));
+    if (priceIsPlaceholder) {
+      throw new Error("Set a listing price on the vehicle before publishing to the showroom.");
+    }
   }
 
   await db.$transaction(async (tx) => {

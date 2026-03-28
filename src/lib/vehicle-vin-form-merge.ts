@@ -6,6 +6,11 @@
 
 import type { UseFormGetValues, UseFormSetValue } from "react-hook-form";
 import type { VinMetadata } from "@/lib/vin";
+import {
+  isIntakePlaceholderIdentityPair,
+  isIntakePlaceholderMake,
+  isIntakePlaceholderModel,
+} from "@/lib/intake-draft-placeholders";
 
 /** Form shape subset — keep aligned with VehicleFormValues in VehicleForm.tsx */
 export type VehicleVinFormValues = {
@@ -26,24 +31,49 @@ const isStringEmpty = (v: unknown) => v == null || v === undefined || !String(v 
 const isNumberEmpty = (v: unknown) =>
   v == null || v === undefined || v === "" || (typeof v === "number" && (Number.isNaN(v) || v === 0));
 
+function decoderMayFillMake(getValues: UseFormGetValues<VehicleVinFormValues>): boolean {
+  const v = getValues("make" as never);
+  return isStringEmpty(v) || isIntakePlaceholderMake(v);
+}
+
+function decoderMayFillModel(getValues: UseFormGetValues<VehicleVinFormValues>): boolean {
+  const v = getValues("model" as never);
+  return isStringEmpty(v) || isIntakePlaceholderModel(v);
+}
+
 export function applyVinMetadataToVehicleForm<T extends VehicleVinFormValues>(
   setValue: UseFormSetValue<T>,
   getValues: UseFormGetValues<T>,
   data: VinMetadata
 ): void {
-  if (data.year != null && isNumberEmpty(getValues("year" as never))) {
+  const gv = getValues as unknown as UseFormGetValues<VehicleVinFormValues>;
+  const identityWasIntakePlaceholder = isIntakePlaceholderIdentityPair(gv("make" as never), gv("model" as never));
+
+  const decoderMayFillYear = (): boolean => {
+    const y = gv("year" as never);
+    if (isNumberEmpty(y)) return true;
+    return identityWasIntakePlaceholder;
+  };
+
+  const decoderMayFillDrivetrain = (): boolean => {
+    const v = gv("drivetrain" as never);
+    if (isStringEmpty(v)) return true;
+    return identityWasIntakePlaceholder;
+  };
+
+  if (data.year != null && decoderMayFillYear()) {
     setValue("year" as never, data.year as never);
   }
-  if (data.make && isStringEmpty(getValues("make" as never))) {
+  if (data.make && decoderMayFillMake(gv)) {
     setValue("make" as never, data.make as never);
   }
-  if (data.model && isStringEmpty(getValues("model" as never))) {
+  if (data.model && decoderMayFillModel(gv)) {
     setValue("model" as never, data.model as never);
   }
   if (data.trim != null && isStringEmpty(getValues("trim" as never))) {
     setValue("trim" as never, data.trim as never);
   }
-  if (data.drivetrain && isStringEmpty(getValues("drivetrain" as never))) {
+  if (data.drivetrain && decoderMayFillDrivetrain()) {
     setValue("drivetrain" as never, data.drivetrain as never);
   }
   if (data.bodyStyle != null && isStringEmpty(getValues("bodyStyle" as never))) {

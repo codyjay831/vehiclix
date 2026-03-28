@@ -20,6 +20,11 @@ import { isVinUnique } from "@/actions/inventory";
 import { fetchIntakeFieldSuggestionsFromOpenAI } from "@/lib/openai-intake-suggestions";
 import type { VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { intakeTelemetry } from "@/lib/intake-telemetry";
+import {
+  INTAKE_PLACEHOLDER_MAKE,
+  INTAKE_PLACEHOLDER_MODEL,
+  INTAKE_PLACEHOLDER_PRICE,
+} from "@/lib/intake-draft-placeholders";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
@@ -127,15 +132,21 @@ async function createPlaceholderDraftVehicle(
       data: {
         vin,
         year,
-        make: "Pending",
-        model: "Intake",
+        make: INTAKE_PLACEHOLDER_MAKE,
+        model: INTAKE_PLACEHOLDER_MODEL,
         mileage: 0,
         drivetrain: Drivetrain.AWD,
         exteriorColor: "TBD",
         interiorColor: "TBD",
         condition: InventoryCondition.GOOD,
         titleStatus: TitleStatus.CLEAN,
-        price: new Prisma.Decimal(1000),
+        price: new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE),
+        intakeFieldProvenance: {
+          v: 1,
+          documentId: null,
+          fields: {},
+          intakePlaceholderPrice: true,
+        } as Prisma.InputJsonValue,
         description: null,
         highlights: [],
         features: [],

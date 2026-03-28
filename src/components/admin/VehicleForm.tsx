@@ -70,6 +70,23 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { isProvisionalIntakeVin } from "@/lib/vehicle-intake-helpers";
 import { isValidVinCheckDigit } from "@/lib/vin-extraction";
+import {
+  INTAKE_PLACEHOLDER_PRICE,
+  isIntakePlaceholderPriceValue,
+} from "@/lib/intake-draft-placeholders";
+
+function initialFormListingPrice(
+  initialData: { vehicleStatus?: string; intakeFieldProvenance?: unknown; price?: unknown } | undefined
+): number | "" {
+  if (!initialData) return "";
+  const prov = parseIntakeFieldProvenanceJson(initialData.intakeFieldProvenance ?? null);
+  const unset =
+    initialData.vehicleStatus === "DRAFT" &&
+    prov?.intakePlaceholderPrice === true &&
+    isIntakePlaceholderPriceValue(Number(initialData.price));
+  if (unset) return "";
+  return Number(initialData.price);
+}
 
 interface VehicleFormValues {
   vin: string;
@@ -92,7 +109,7 @@ interface VehicleFormValues {
   condition: InventoryCondition;
   titleStatus: TitleStatus;
   conditionNotes?: string | null;
-  price: number;
+  price: number | "";
   description?: string | null;
   highlights?: string[];
   features?: string[];
@@ -177,7 +194,10 @@ const vehicleSchema = z.object({
   condition: z.nativeEnum(InventoryCondition),
   titleStatus: z.nativeEnum(TitleStatus),
   conditionNotes: z.string().max(2000).optional().nullable(),
-  price: z.coerce.number().min(1000, "Price must be at least $1,000"),
+  price: z.union([
+    z.literal(""),
+    z.coerce.number().min(1000, "Price must be at least $1,000"),
+  ]),
   description: z.string().max(5000).optional().nullable(),
   highlights: z.array(z.string().max(80)).max(20).optional(),
   features: z.array(z.string()).optional(),
@@ -238,7 +258,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         const { intakeFieldProvenance: _omit, ...rest } = initialData;
         return rest;
       })(),
-      price: Number(initialData.price),
+      price: initialFormListingPrice(initialData),
       batteryRange: initialData.batteryRangeEstimate,
       bodyStyle: initialData.bodyStyle ?? null,
       fuelType: initialData.fuelType ?? null,
@@ -251,6 +271,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     } : {
       highlights: [],
       features: [],
+      price: "",
     },
   });
 
@@ -850,8 +871,48 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const onSubmit = async (values: VehicleFormValues, status?: VehicleStatus) => {
     setIsSubmitting(true);
     try {
+      const provInitial = parseIntakeFieldProvenanceJson(initialData?.intakeFieldProvenance ?? null);
+      const intakeDraftPriceUnset =
+        isEdit &&
+        initialData?.vehicleStatus === "DRAFT" &&
+        provInitial?.intakePlaceholderPrice === true &&
+        isIntakePlaceholderPriceValue(Number(initialData?.price));
+
+      const priceRaw = values.price;
+      const priceEmpty =
+        priceRaw === "" ||
+        priceRaw === undefined ||
+        (typeof priceRaw === "number" && Number.isNaN(priceRaw));
+
+      let effectivePrice: number;
+      if (priceEmpty) {
+        if (intakeDraftPriceUnset) {
+          effectivePrice = INTAKE_PLACEHOLDER_PRICE;
+        } else {
+          form.setError("price", { message: "Enter a listing price" });
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        effectivePrice = typeof priceRaw === "number" ? priceRaw : Number(priceRaw);
+        if (Number.isNaN(effectivePrice) || effectivePrice < 1000) {
+          form.setError("price", { message: "Price must be at least $1,000" });
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      if (intakeProvenanceRef.current && effectivePrice !== INTAKE_PLACEHOLDER_PRICE) {
+        intakeProvenanceRef.current = {
+          ...intakeProvenanceRef.current,
+          intakePlaceholderPrice: false,
+        };
+      }
+
+      const valuesForSave: VehicleFormValues = { ...values, price: effectivePrice };
+
       // 1. Check VIN uniqueness
-      const isUnique = await isVinUnique(values.vin, initialData?.id);
+      const isUnique = await isVinUnique(valuesForSave.vin, initialData?.id);
       if (!isUnique) {
         form.setError("vin", { message: "A vehicle with this VIN already exists" });
         setIsSubmitting(false);
@@ -861,7 +922,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       if (!isEdit) {
         // 2. Additional Publish Validation (Only for Creation)
         if (status === "LISTED") {
-          if (!values.description) {
+          if (!valuesForSave.description) {
             form.setError("description", { message: "Description is required to publish" });
             setIsSubmitting(false);
             return;
@@ -876,7 +937,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         // 3. Submit Create
         const formData = new FormData();
         formData.append("status", status!);
-        Object.entries(values).forEach(([key, value]) => {
+        Object.entries(valuesForSave).forEach(([key, value]) => {
           if (key === "highlights" || key === "features") {
             (value as string[]).forEach((v) => formData.append(key, v));
           } else if (value !== undefined && value !== null && key !== "photos") {
@@ -886,7 +947,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         photos.forEach((photo) => formData.append("photos", photo));
 
         const prov = intakeProvenanceRef.current;
-        if (prov && (Object.keys(prov.fields).length > 0 || prov.documentId)) {
+        if (
+          prov &&
+          (Object.keys(prov.fields).length > 0 ||
+            prov.documentId ||
+            prov.intakePlaceholderPrice !== undefined)
+        ) {
           formData.append("intakeFieldProvenance", JSON.stringify(prov));
         }
 
@@ -895,7 +961,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       } else {
         // 3. Submit Update (Field only)
         const formData = new FormData();
-        Object.entries(values).forEach(([key, value]) => {
+        Object.entries(valuesForSave).forEach(([key, value]) => {
           if (key === "highlights" || key === "features") {
             (value as string[]).forEach((v) => formData.append(key, v));
           } else if (value !== undefined && value !== null && key !== "photos") {
@@ -904,7 +970,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         });
 
         const provEdit = intakeProvenanceRef.current;
-        if (provEdit && (Object.keys(provEdit.fields).length > 0 || provEdit.documentId)) {
+        if (
+          provEdit &&
+          (Object.keys(provEdit.fields).length > 0 ||
+            provEdit.documentId ||
+            provEdit.intakePlaceholderPrice !== undefined)
+        ) {
           formData.append("intakeFieldProvenance", JSON.stringify(provEdit));
         }
 

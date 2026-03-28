@@ -12,6 +12,8 @@ export type IntakeFieldProvenanceV1 = {
   v: typeof INTAKE_PROVENANCE_VERSION;
   documentId: string | null;
   fields: Record<string, { source: IntakeFieldSource; acceptedAt: string }>;
+  /** True while DB price is the intake system minimum — not an intentional listing price. */
+  intakePlaceholderPrice?: boolean;
 };
 
 /** Field keys the client may record (defensive allowlist on server). */
@@ -46,6 +48,7 @@ const provenanceSchema = z.object({
   v: z.literal(1),
   documentId: z.string().uuid().nullable().optional(),
   fields: z.record(z.string(), fieldEntrySchema),
+  intakePlaceholderPrice: z.boolean().optional(),
 });
 
 export function parseIntakeFieldProvenanceJson(raw: unknown): IntakeFieldProvenanceV1 | null {
@@ -66,10 +69,19 @@ export function parseIntakeFieldProvenanceJson(raw: unknown): IntakeFieldProvena
       fields[k] = v;
     }
   }
+  const intakePlaceholderPrice = parsed.data.intakePlaceholderPrice;
+  if (
+    Object.keys(fields).length === 0 &&
+    !(parsed.data.documentId ?? null) &&
+    intakePlaceholderPrice !== true
+  ) {
+    return null;
+  }
   return {
     v: 1,
     documentId: parsed.data.documentId ?? null,
     fields,
+    ...(intakePlaceholderPrice === true ? { intakePlaceholderPrice: true } : {}),
   };
 }
 
@@ -90,6 +102,7 @@ export function mergeIntakeProvenanceFields(
     v: 1,
     documentId: documentId !== undefined ? documentId : base.documentId,
     fields: { ...base.fields },
+    ...(base.intakePlaceholderPrice === true ? { intakePlaceholderPrice: true } : {}),
   };
   for (const [k, v] of Object.entries(updates)) {
     if (!INTAKE_PROVENANCE_FIELD_KEYS.has(k)) continue;
