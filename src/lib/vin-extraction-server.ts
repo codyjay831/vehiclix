@@ -99,7 +99,8 @@ async function ensurePdfJsNodePolyfills(): Promise<void> {
  * so `pathToFileURL` produces a bogus `file:` URL. Skip the override in development; pdf.js default works locally.
  */
 function setPdfJsWorkerSrcAbsolute(pdfParseMod: typeof import("pdf-parse")): void {
-  const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  const pdfPkgJson = require.resolve("pdfjs-dist/package.json");
+  const workerPath = path.join(path.dirname(pdfPkgJson), "legacy", "build", "pdf.worker.mjs");
   pdfParseMod.PDFParse.setWorker(pathToFileURL(workerPath).href);
 }
 

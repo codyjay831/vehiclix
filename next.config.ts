@@ -21,6 +21,8 @@ const nextConfig: NextConfig = {
     "@google-cloud/cloud-sql-connector",
     "@napi-rs/canvas",
     "pdf-parse",
+    /** Keep pdfjs on disk so `createRequire(import.meta.url).resolve("pdfjs-dist/...")` stays a real path (not a Turbopack module id). */
+    "pdfjs-dist",
     "tesseract.js",
     "@tesseract.js-data/eng",
     "openai",
