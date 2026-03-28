@@ -202,6 +202,36 @@ function formatAiConfidence(conf: number | null | undefined): string | null {
   return `Model confidence ~${pct}%`;
 }
 
+function intakeSummaryAiDescription(meta: VehicleIntakeAiMeta): string {
+  if (meta.status === "skipped" && meta.reason === "no_api_key") {
+    return "OPENAI_API_KEY is not set — intake used text/OCR fallback where possible. No AI suggestions for this upload.";
+  }
+  if (meta.status === "skipped" && meta.reason === "openai_error") {
+    const pre = meta.primaryAiIntakeDisabled ? "Primary extraction is off; " : "";
+    return `${pre}Suggestions failed (${meta.message || "request error"}). Intake still completed.`;
+  }
+  if (meta.status === "skipped" && meta.reason === "extraction_unusable") {
+    if (meta.primaryAiIntakeDisabled) {
+      return "Primary extraction is off (INTAKE_AI_PRIMARY=0); no usable text-based suggestions came back for this upload.";
+    }
+    return "AI returned no usable suggestions for this upload.";
+  }
+  if (meta.status === "skipped") {
+    return "AI suggestions were skipped for this upload.";
+  }
+  const parts: string[] = [];
+  if (meta.primaryAiIntakeDisabled) {
+    parts.push("Fast primary extraction is off (INTAKE_AI_PRIMARY=0).");
+  }
+  if (meta.extractionInput === "image") {
+    parts.push("Photos: the model reads the image for structured fields.");
+  } else if (meta.extractionInput === "pdf_text") {
+    parts.push("PDFs: text is extracted first, then interpreted — not full-page vision.");
+  }
+  parts.push("Tap Accept for each suggestion below; VIN and listing price follow the usual rules.");
+  return parts.join(" ");
+}
+
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters"),
   year: z.coerce.number().min(2010).max(new Date().getFullYear() + 1),
@@ -334,7 +364,9 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
       let deferred: DeferredAiReviewFields = {};
       if (payload.aiSuggestions) {
-        const r = applyIntakeAiWithDeferredReview(form.getValues, payload.aiSuggestions);
+        const r = applyIntakeAiWithDeferredReview(form.getValues, payload.aiSuggestions, {
+          decodeFailed: payload.decodeFailed,
+        });
         deferred = r.deferred;
       }
       setIntakeAiAcceptedFields([]);
@@ -363,7 +395,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       const hasDeferred = deferredAiReviewHasPending(deferred);
       if (payload.decodeFailed) {
         toast.message(
-          "VIN was set from your document, but NHTSA decode failed. Enter remaining details manually."
+          "VIN was set from your document, but NHTSA decode did not return data. Review any identity hints in the intake summary and tap Accept before saving — nothing is applied silently."
         );
       } else if (hasDeferred) {
         toast.success(
@@ -718,6 +750,59 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     void logIntakeReviewEventAction({ action: "accept", fieldGroup: "features" });
   };
 
+  const acceptDeferredIdentityYear = () => {
+    const v = deferredAiReview?.suggestedIdentityYear;
+    if (v == null) return;
+    form.setValue("year", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.suggestedIdentityYear;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "year"])]);
+    bumpAiAcceptedProvenance("year");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "identityYear" });
+  };
+  const acceptDeferredIdentityMake = () => {
+    const v = deferredAiReview?.suggestedIdentityMake;
+    if (!v) return;
+    form.setValue("make", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.suggestedIdentityMake;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "make"])]);
+    bumpAiAcceptedProvenance("make");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "identityMake" });
+  };
+  const acceptDeferredIdentityModel = () => {
+    const v = deferredAiReview?.suggestedIdentityModel;
+    if (!v) return;
+    form.setValue("model", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.suggestedIdentityModel;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "model"])]);
+    bumpAiAcceptedProvenance("model");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "identityModel" });
+  };
+  const acceptDeferredIdentityTrim = () => {
+    const v = deferredAiReview?.suggestedIdentityTrim;
+    if (v == null || !String(v).trim()) return;
+    form.setValue("trim", v);
+    stripDeferredPartial((d) => {
+      const n = { ...d };
+      delete n.suggestedIdentityTrim;
+      return n;
+    });
+    setIntakeAiAcceptedFields((p) => [...new Set([...p, "trim"])]);
+    bumpAiAcceptedProvenance("trim");
+    void logIntakeReviewEventAction({ action: "accept", fieldGroup: "identityTrim" });
+  };
+
   const renderIntakeBadges = (field: string) => {
     const bits: React.ReactNode[] = [];
     if (decoderFilledFields.includes(field)) {
@@ -729,6 +814,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     }
     const def = deferredAiReview;
     const pending =
+      (field === "year" && def?.suggestedIdentityYear != null) ||
+      (field === "make" && Boolean(def?.suggestedIdentityMake)) ||
+      (field === "model" && Boolean(def?.suggestedIdentityModel)) ||
+      (field === "trim" && def?.suggestedIdentityTrim != null && String(def.suggestedIdentityTrim).trim() !== "") ||
       (field === "mileage" && def?.mileage != null) ||
       (field === "exteriorColor" && Boolean(def?.exteriorColor)) ||
       (field === "interiorColor" && Boolean(def?.interiorColor)) ||
@@ -1101,9 +1190,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
               <p className="text-sm font-medium text-foreground">Optional: upload a document</p>
               <p className="text-xs text-muted-foreground">
-                PDF, JPG/JPEG, or PNG (max 10MB). When we find a VIN, we set it and run the same NHTSA decode
-                automatically (empty fields only). Use <span className="font-medium text-foreground">Re-run decode</span>{" "}
-                after you edit the VIN. Your listing description and price are never changed by this step.
+                PDF, JPG/JPEG, or PNG (max 10MB). We find and validate the VIN, then run NHTSA decode (empty fields
+                only). Photos are read as images; PDFs use extracted text first. If the read is uncertain, we&apos;ll
+                ask you to confirm. Use <span className="font-medium text-foreground">Re-run decode</span> after you edit
+                the VIN. Your listing description and price are never changed by this step.
               </p>
               <input
                 ref={intakeFileInputRef}
@@ -1150,13 +1240,14 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                     <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
                       <li>
                         <span className="font-medium text-foreground">VIN </span>
-                        was taken from your uploaded document.
+                        was taken from your upload (AI-assisted read where enabled, with validation — text/OCR fallback
+                        when needed).
                       </li>
                       {lastIntakeSummary.decodeFailed ? (
                         <li>
                           <span className="font-medium text-foreground">Decode: </span>
-                          NHTSA did not return structured data — enter year, make, model, and other identity fields
-                          manually if needed.
+                          NHTSA did not return structured data — use the summary below for any AI identity hints (Accept
+                          to apply), or enter fields manually.
                         </li>
                       ) : lastIntakeSummary.intakeDecoderFilledKeys.length > 0 ? (
                         <li>
@@ -1179,19 +1270,147 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       2 · AI suggestions for review
                     </p>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      {lastIntakeSummary.aiMeta.status === "applied"
-                        ? "Supporting fields only (mileage, colors, notes, title clues, chips). Nothing is saved until you tap Accept — the model does not change VIN, identity, or price."
-                        : lastIntakeSummary.aiMeta.status === "skipped" &&
-                            lastIntakeSummary.aiMeta.reason === "no_api_key"
-                          ? "Document AI was skipped — OPENAI_API_KEY is not set. Intake still completed; VIN extraction and decode ran normally."
-                          : lastIntakeSummary.aiMeta.status === "skipped" &&
-                              lastIntakeSummary.aiMeta.reason === "openai_error"
-                            ? `Document AI was skipped (${lastIntakeSummary.aiMeta.message || "request failed"}). Intake still completed; suggestions are unavailable for this upload.`
-                            : "Document AI was skipped for this upload."}
+                      {intakeSummaryAiDescription(lastIntakeSummary.aiMeta)}
                     </p>
 
                     {deferredAiReview && deferredAiReviewHasPending(deferredAiReview) ? (
                       <div className="space-y-3">
+                    {deferredAiReview.suggestedIdentityYear != null ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Year (AI hint): </span>
+                          {deferredAiReview.suggestedIdentityYear}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedYearConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedYearConfidence)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredIdentityYear}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "identityYear" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.suggestedIdentityYear;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.suggestedIdentityMake ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Make (AI hint): </span>
+                          {deferredAiReview.suggestedIdentityMake}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedMakeConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedMakeConfidence)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredIdentityMake}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "identityMake" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.suggestedIdentityMake;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.suggestedIdentityModel ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Model (AI hint): </span>
+                          {deferredAiReview.suggestedIdentityModel}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedModelConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedModelConfidence)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredIdentityModel}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "identityModel" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.suggestedIdentityModel;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {deferredAiReview.suggestedIdentityTrim != null && String(deferredAiReview.suggestedIdentityTrim).trim() ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
+                        <span className="text-xs">
+                          <span className="font-medium text-foreground">Trim (AI hint): </span>
+                          {deferredAiReview.suggestedIdentityTrim}
+                          {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedTrimConfidence) ? (
+                            <span className="block text-[10px] text-muted-foreground mt-0.5">
+                              {formatAiConfidence(lastIntakeSummary.aiSuggestions?.suggestedTrimConfidence)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" className="h-8" onClick={acceptDeferredIdentityTrim}>
+                            Accept
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() => {
+                              void logIntakeReviewEventAction({ action: "reject", fieldGroup: "identityTrim" });
+                              stripDeferredPartial((d) => {
+                                const n = { ...d };
+                                delete n.suggestedIdentityTrim;
+                                return n;
+                              });
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     {deferredAiReview.mileage != null ? (
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-background/60 p-3">
                         <span className="text-xs">
@@ -1530,7 +1749,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {renderIntakeBadges("year")}
                     </FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} value={field.value || ""} className={requiredFieldErrorClass("year", fieldState.invalid)} />
+                      <Input
+                        type="number"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(requiredFieldErrorClass("year", fieldState.invalid), intakeFieldReviewClass("year"))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1546,7 +1770,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {renderIntakeBadges("make")}
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Tesla, Rivian" {...field} value={field.value || ""} className={requiredFieldErrorClass("make", fieldState.invalid)} />
+                      <Input
+                        placeholder="e.g., Tesla, Rivian"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(requiredFieldErrorClass("make", fieldState.invalid), intakeFieldReviewClass("make"))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1562,7 +1791,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {renderIntakeBadges("model")}
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Model 3, R1S" {...field} value={field.value || ""} className={requiredFieldErrorClass("model", fieldState.invalid)} />
+                      <Input
+                        placeholder="e.g., Model 3, R1S"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(requiredFieldErrorClass("model", fieldState.invalid), intakeFieldReviewClass("model"))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1578,7 +1812,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {renderIntakeBadges("trim")}
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Performance, Adventure" {...field} value={field.value || ""} />
+                      <Input
+                        placeholder="e.g., Performance, Adventure"
+                        {...field}
+                        value={field.value || ""}
+                        className={cn(intakeFieldReviewClass("trim"))}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -2203,10 +2442,9 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             <DialogHeader>
               <DialogTitle>Confirm VIN from document</DialogTitle>
               <DialogDescription>
-                This VIN was inferred with OCR-style corrections or from a photo scan — it is not treated as a
-                zero-error text read. Pick the VIN that matches the vehicle, or enter it manually. We only run the
-                decoder after you confirm. If the VIN in your form differs, you&apos;ll get a second prompt to choose
-                which to keep.
+                The VIN did not pass auto-accept (checksum, model confidence, or both). Confirm the correct 17-character
+                VIN from your upload, or enter it manually. We only run the decoder after you confirm. If the VIN in
+                your form differs, you&apos;ll get a second prompt to choose which to keep.
               </DialogDescription>
             </DialogHeader>
             {pendingOcrVinReview && pendingOcrVinReview.ocrVinCandidates.length > 0 ? (

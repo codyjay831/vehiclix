@@ -5,6 +5,40 @@
 
 export type TitleStatusHint = "CLEAN" | "SALVAGE" | "REBUILT" | "LEMON";
 
+export type IntakeSourceTypeGuess =
+  | "title"
+  | "registration"
+  | "listing_screenshot"
+  | "sticker"
+  | "other";
+
+export type IntakeConfidence = {
+  overall: number;
+  vin: number | null;
+  year: number | null;
+  make: number | null;
+  model: number | null;
+  trim: number | null;
+  mileage: number | null;
+  plate: number | null;
+  titleStatus: number | null;
+};
+
+export type VehicleIntakeAiExtraction = {
+  vin: string | null;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  trim: string | null;
+  mileage: number | null;
+  plate: string | null;
+  titleStatus: TitleStatusHint | null;
+  confidence: IntakeConfidence;
+  notes: string | null;
+  rawTextSummary: string | null;
+  sourceTypeGuess: IntakeSourceTypeGuess;
+};
+
 export type VehicleIntakeAiSuggestions = {
   mileage: number | null;
   mileageConfidence: number | null;
@@ -21,9 +55,29 @@ export type VehicleIntakeAiSuggestions = {
   internalNotesConfidence: number | null;
   highlightSuggestions: string[];
   featureSuggestions: string[];
+  /** Identity hints from primary extraction; client shows Accept when decode failed (see deferred review). */
+  suggestedYear?: number | null;
+  suggestedMake?: string | null;
+  suggestedModel?: string | null;
+  suggestedTrim?: string | null;
+  suggestedYearConfidence?: number | null;
+  suggestedMakeConfidence?: number | null;
+  suggestedModelConfidence?: number | null;
+  suggestedTrimConfidence?: number | null;
 };
 
-export type VehicleIntakeAiMeta =
-  | { status: "applied" }
-  | { status: "skipped"; reason: "no_api_key" }
-  | { status: "skipped"; reason: "openai_error"; message?: string };
+/** Shared flags on all intake AI meta variants (so primary-off is visible even when suggestions are skipped). */
+export type VehicleIntakeAiMetaBase = {
+  /** True when `INTAKE_AI_PRIMARY=0` but OpenAI key exists (primary vision / structured PDF extraction skipped). */
+  primaryAiIntakeDisabled?: boolean;
+};
+
+export type VehicleIntakeAiMeta = VehicleIntakeAiMetaBase &
+  (
+    | {
+        status: "applied";
+        extractionInput?: "image" | "pdf_text";
+        secondarySuggestions?: boolean;
+      }
+    | { status: "skipped"; reason: "no_api_key" | "openai_error" | "extraction_unusable"; message?: string }
+  );

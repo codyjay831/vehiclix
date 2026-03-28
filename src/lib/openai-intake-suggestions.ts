@@ -8,7 +8,8 @@ import type { VinMetadata } from "@/lib/vin";
 import type { VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { withTimeout } from "@/lib/vin-extraction";
 
-const MAX_DOC_CHARS = 14_000;
+export const INTAKE_SUGGESTIONS_MAX_DOC_CHARS = 14_000;
+const MAX_DOC_CHARS = INTAKE_SUGGESTIONS_MAX_DOC_CHARS;
 const OPENAI_MS = 45_000;
 
 /**
@@ -118,12 +119,25 @@ function normalizeSuggestions(raw: Record<string, unknown>): VehicleIntakeAiSugg
   };
 }
 
+export type FetchIntakeFieldSuggestionsOptions = {
+  /**
+   * Notes, raw summary, plate, title hints, odometer from the primary vision/text extraction pass.
+   * Used when documentPlainText is empty (e.g. image VIN path) so merchandising fields can still be mined.
+   */
+  primaryEnrichmentBlock?: string;
+};
+
 export async function fetchIntakeFieldSuggestionsFromOpenAI(
   documentPlainText: string,
-  decoded: VinMetadata | null
+  decoded: VinMetadata | null,
+  options?: FetchIntakeFieldSuggestionsOptions
 ): Promise<VehicleIntakeAiSuggestions | null> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
+
+  const docTrim = documentPlainText.trim();
+  const primaryBlock = (options?.primaryEnrichmentBlock ?? "").trim();
+  if (!docTrim && !primaryBlock) return null;
 
   let OpenAI: (typeof import("openai"))["default"];
   try {
@@ -134,7 +148,8 @@ export async function fetchIntakeFieldSuggestionsFromOpenAI(
   }
 
   const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
-  const excerpt = documentPlainText.slice(0, MAX_DOC_CHARS);
+  const excerpt = docTrim.slice(0, MAX_DOC_CHARS);
+  const structuredSlice = primaryBlock.slice(0, MAX_DOC_CHARS);
 
   const decoderContext =
     decoded &&
@@ -157,26 +172,35 @@ export async function fetchIntakeFieldSuggestionsFromOpenAI(
       messages: [
         {
           role: "system",
-          content: `You read dealership document text (title, auction sheet, registration) and return ONLY the JSON schema fields.
+          content: `You read dealership document material (raw text and/or a structured extraction summary from a prior pass on the same file) and return ONLY the JSON schema fields.
 
 Hard bans (never output or infer): VIN, year, make, model, trim, price, transmission, drivetrain, public listing description, ad copy, or marketing prose.
 
-Allowed outputs:
-- mileage: non-negative integer only if the odometer is explicitly stated in the text; otherwise mileage = -1 and mileage_confidence = 0.
-- exterior_color / interior_color: literal colors from the document; empty string if not stated. Use confidence 0–1; use <=0.3 when guessing from weak hints.
-- title_status_hint: CLEAN, SALVAGE, REBUILT, LEMON only when explicitly indicated; otherwise NONE. Never invent a branded title story.
-- title_notes: short factual phrases visible in the document (brands, lien, duplicate, etc.); empty if none.
-- condition_notes_draft / internal_notes_draft: concise factual notes from the document only; empty if nothing useful.
-- highlight_suggestions: up to 8 short factual chips (e.g. equipment), not slogans.
-- feature_suggestions: up to 12 optional equipment lines from the document, not sales copy.
+When document text is short, empty, or only a summary: mine BOTH the document text AND the structured extraction context for equipment, packages, trim-level facts, options, warranties, and service mentions. Turn concrete facts into highlight_suggestions (short chips) and feature_suggestions (checklist-style lines). Use internal_notes_draft for additional factual bullets useful to staff (still no banned fields).
 
-Confidence fields: 0.0 = unknown/not applicable; reserve values above 0.7 only when the text clearly states the fact.
+Allowed outputs:
+- mileage: non-negative integer only if the odometer is explicitly stated; otherwise mileage = -1 and mileage_confidence = 0.
+- exterior_color / interior_color: literal colors stated in the sources; empty string if not stated. Use confidence 0–1; use <=0.3 when guessing from weak hints.
+- title_status_hint: CLEAN, SALVAGE, REBUILT, LEMON only when explicitly indicated; otherwise NONE.
+- title_notes: short factual phrases (brands, lien, duplicate, etc.); empty if none.
+- condition_notes_draft / internal_notes_draft: concise factual notes from the sources only; empty if nothing useful.
+- highlight_suggestions: up to 8 short factual chips (e.g. equipment), not slogans.
+- feature_suggestions: up to 12 equipment/option lines from the sources, not sales copy.
+
+Confidence fields: 0.0 = unknown/not applicable; reserve values above 0.7 only when a source clearly states the fact.
 
 ${decoderContext}`,
         },
         {
           role: "user",
-          content: `Document text:\n\n${excerpt}`,
+          content: [
+            excerpt
+              ? `Document / PDF / OCR text:\n\n${excerpt}`
+              : `Document / PDF / OCR text: (none — use structured extraction context below)`,
+            structuredSlice
+              ? `\n\nStructured extraction context (prior pass on same file; do not output VIN or identity):\n\n${structuredSlice}`
+              : "",
+          ].join(""),
         },
       ],
       response_format: {

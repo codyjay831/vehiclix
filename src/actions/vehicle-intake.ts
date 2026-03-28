@@ -16,20 +16,37 @@ import {
 } from "@/lib/vin-extraction-server";
 import { isProvisionalIntakeVin, randomProvisionalVin } from "@/lib/vehicle-intake-helpers";
 import { isVinUnique } from "@/actions/inventory";
-import { fetchIntakeFieldSuggestionsFromOpenAI } from "@/lib/openai-intake-suggestions";
-import type { VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
+import {
+  fetchIntakeFieldSuggestionsFromOpenAI,
+  INTAKE_SUGGESTIONS_MAX_DOC_CHARS,
+} from "@/lib/openai-intake-suggestions";
+import {
+  extractVehicleIntakeWithOpenAI,
+  mapVehicleIntakeExtractionToSuggestions,
+} from "@/lib/openai-intake-extraction";
+import type { VehicleIntakeAiExtraction, VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { intakeTelemetry } from "@/lib/intake-telemetry";
 import {
   INTAKE_PLACEHOLDER_MAKE,
   INTAKE_PLACEHOLDER_MODEL,
   INTAKE_PLACEHOLDER_PRICE,
 } from "@/lib/intake-draft-placeholders";
+import {
+  INTAKE_OVERALL_MIN_FOR_AUTO_VIN,
+  INTAKE_VIN_AUTO_ACCEPT_CONFIDENCE,
+} from "@/lib/intake-ai-confidence";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 const PDF_TEXT_MS = 25_000;
 const IMAGE_OCR_MS = 65_000;
+const AI_EXTRACTION_MS = 62_000;
+
+/** Set INTAKE_AI_PRIMARY=0 to skip AI and use legacy text/OCR path only. */
+function isIntakeAiPrimaryEnabled(): boolean {
+  return process.env.INTAKE_AI_PRIMARY !== "0";
+}
 
 type IntakeExtractionFailureClass =
   | "timeout"
@@ -98,6 +115,125 @@ function textLengthBucket(len: number): "empty" | "small" | "medium" | "large" {
   return "large";
 }
 
+/** Combine legacy/plainText with PDF text from primary pass when the VIN path skipped populating `plainText`. */
+function buildEnrichmentDocumentPlainText(plainText: string, pdfPlainTextForFallback: string | undefined): string {
+  const a = plainText.trim();
+  const b = (pdfPlainTextForFallback ?? "").trim();
+  if (a && b && a === b) return a.slice(0, INTAKE_SUGGESTIONS_MAX_DOC_CHARS);
+  const parts: string[] = [];
+  if (a) parts.push(a);
+  if (b && b !== a) parts.push(b);
+  if (parts.length === 0) return "";
+  return parts.join("\n\n---\n\n").slice(0, INTAKE_SUGGESTIONS_MAX_DOC_CHARS);
+}
+
+/** Non-VIN context from primary extraction for second-pass merchandising (highlights, features, notes). */
+function buildPrimaryEnrichmentBlock(extraction: VehicleIntakeAiExtraction): string {
+  const lines: string[] = [];
+  if (extraction.notes?.trim()) lines.push(`Notes: ${extraction.notes.trim()}`);
+  if (extraction.rawTextSummary?.trim()) lines.push(`Summary: ${extraction.rawTextSummary.trim()}`);
+  if (extraction.mileage != null && extraction.mileage >= 0) {
+    lines.push(`Stated odometer: ${extraction.mileage}`);
+  }
+  if (extraction.plate?.trim()) lines.push(`Plate: ${extraction.plate.trim()}`);
+  if (extraction.titleStatus) {
+    lines.push(`Title status cue: ${extraction.titleStatus}`);
+  }
+  lines.push(`Document kind guess: ${extraction.sourceTypeGuess.replace(/_/g, " ")}`);
+  return lines.join("\n");
+}
+
+function mergeTextIntakeLayers(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  maxLen: number
+): string | null {
+  const ta = (a ?? "").trim();
+  const tb = (b ?? "").trim();
+  if (!ta) return tb.length ? tb.slice(0, maxLen) : null;
+  if (!tb) return ta.slice(0, maxLen);
+  const tl = ta.toLowerCase();
+  const bl = tb.toLowerCase();
+  if (bl.includes(tl) || tl.includes(bl)) {
+    return (ta.length >= tb.length ? ta : tb).slice(0, maxLen);
+  }
+  const out = `${ta}\n\n${tb}`.trim();
+  return out.length > maxLen ? out.slice(0, maxLen) : out;
+}
+
+function mergeIntakeAiSuggestions(
+  base: VehicleIntakeAiSuggestions,
+  extra: VehicleIntakeAiSuggestions | null
+): VehicleIntakeAiSuggestions {
+  if (!extra) return base;
+  const hl = [...base.highlightSuggestions];
+  for (const h of extra.highlightSuggestions) {
+    if (!hl.includes(h)) hl.push(h);
+    if (hl.length >= 8) break;
+  }
+  const ft = [...base.featureSuggestions];
+  for (const f of extra.featureSuggestions) {
+    if (!ft.includes(f)) ft.push(f);
+    if (ft.length >= 12) break;
+  }
+
+  const mileage =
+    base.mileage != null && base.mileage >= 0
+      ? base.mileage
+      : extra.mileage != null && extra.mileage >= 0
+        ? extra.mileage
+        : null;
+  const mileageConfidence =
+    base.mileage != null && base.mileage >= 0 ? base.mileageConfidence : extra.mileageConfidence;
+
+  const titleHint = base.titleStatusHint ?? extra.titleStatusHint;
+  const titleConf =
+    titleHint != null && titleHint === base.titleStatusHint
+      ? base.titleStatusConfidence
+      : titleHint != null && titleHint === extra.titleStatusHint
+        ? extra.titleStatusConfidence
+        : base.titleStatusConfidence ?? extra.titleStatusConfidence;
+
+  const condDraft = base.conditionNotesDraft ?? extra.conditionNotesDraft;
+  const condConf =
+    condDraft == null
+      ? null
+      : base.conditionNotesDraft != null
+        ? base.conditionNotesConfidence
+        : extra.conditionNotesConfidence;
+
+  return {
+    ...base,
+    mileage,
+    mileageConfidence,
+    titleStatusHint: titleHint,
+    titleStatusConfidence: titleConf,
+    titleNotes: mergeTextIntakeLayers(base.titleNotes, extra.titleNotes, 2000),
+    internalNotesDraft: mergeTextIntakeLayers(base.internalNotesDraft, extra.internalNotesDraft, 5000),
+    exteriorColor: base.exteriorColor ?? extra.exteriorColor,
+    exteriorColorConfidence: base.exteriorColorConfidence ?? extra.exteriorColorConfidence,
+    interiorColor: base.interiorColor ?? extra.interiorColor,
+    interiorColorConfidence: base.interiorColorConfidence ?? extra.interiorColorConfidence,
+    conditionNotesDraft: condDraft,
+    conditionNotesConfidence: condConf,
+    highlightSuggestions: hl.slice(0, 8),
+    featureSuggestions: ft.slice(0, 12),
+  };
+}
+
+async function runIntakeEnrichmentSecondPass(
+  enrichmentDocumentText: string,
+  primaryEnrichmentBlock: string,
+  decoded: Awaited<ReturnType<typeof decodeVin>>
+): Promise<VehicleIntakeAiSuggestions | null> {
+  if (!enrichmentDocumentText.trim() && !primaryEnrichmentBlock.trim()) {
+    return null;
+  }
+  return fetchIntakeFieldSuggestionsFromOpenAI(enrichmentDocumentText, decoded, {
+    primaryEnrichmentBlock: primaryEnrichmentBlock.trim() || undefined,
+  });
+}
+
 /**
  * Phase 2C: non-PII review action for support logs (Accept/Reject in admin UI).
  */
@@ -138,7 +274,7 @@ export type VehicleIntakeResult =
       /** User had a non-placeholder VIN that differs from the document — require explicit UI confirmation before applying. */
       requiresVinConfirmation: boolean;
       /**
-       * Image/screenshot OCR: never auto-apply VIN/decode until user confirms a candidate (see ocrVinCandidates).
+       * Uncertain VIN from AI (or legacy OCR): never auto-apply VIN/decode until user confirms a candidate (see ocrVinCandidates).
        * decode is null until client confirms and runs decodeVin locally.
        */
       requiresOcrVinReview?: boolean;
@@ -235,9 +371,119 @@ async function createPlaceholderDraftVehicle(
   });
 }
 
+type LegacyTextResult = {
+  plainText: string;
+  extractionKind: "pdf_text" | "image_ocr";
+  imageOcrMeta?: {
+    image_width?: number | null;
+    image_height?: number | null;
+    image_megapixels?: number | null;
+    ocr_pass?: number | null;
+    ocr_text_length?: number | null;
+    ocr_duration_ms?: number | null;
+  };
+};
+
+async function extractPlainTextLegacy(
+  buffer: Buffer,
+  mime: string,
+  fileSize: number
+): Promise<{ ok: true; data: LegacyTextResult } | { ok: false; error: VehicleIntakeResult }> {
+  const extractionKind = mime === "application/pdf" ? "pdf_text" : "image_ocr";
+  let imageOcrMeta: LegacyTextResult["imageOcrMeta"];
+  let plainText: string;
+  try {
+    if (mime === "application/pdf") {
+      plainText = await withTimeout(extractTextFromPdfBuffer(buffer), PDF_TEXT_MS, "PDF extraction");
+    } else {
+      const imageResult = await withTimeout(extractTextFromImageBuffer(buffer), IMAGE_OCR_MS, "Image OCR");
+      plainText = imageResult.text;
+      imageOcrMeta = {
+        image_width: imageResult.meta.imageWidth,
+        image_height: imageResult.meta.imageHeight,
+        image_megapixels: imageResult.meta.imageMegapixels,
+        ocr_pass: imageResult.meta.ocrPass,
+        ocr_text_length: imageResult.meta.ocrTextLength,
+        ocr_duration_ms: imageResult.meta.ocrDurationMs,
+      };
+    }
+    intakeTelemetry("intake_text_extraction", {
+      ok: true,
+      kind: extractionKind,
+      route: "fallback",
+      length_bucket: textLengthBucket(plainText.length),
+      ...(extractionKind === "image_ocr" ? imageOcrMeta : {}),
+    });
+    return { ok: true, data: { plainText, extractionKind, imageOcrMeta } };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const errName = e instanceof Error ? e.name : "NonError";
+    const timedOut = msg.includes("timed out");
+    const extractionRoute = mime === "application/pdf" ? "pdf" : "image";
+    const failureClass = classifyIntakeTextExtractionFailure(e, { timedOut, route: extractionRoute });
+    const preview = msg.slice(0, 200);
+    const imageFailureMeta =
+      e instanceof ImageOcrFailureError
+        ? {
+            image_width: e.meta.imageWidth ?? null,
+            image_height: e.meta.imageHeight ?? null,
+            image_megapixels: e.meta.imageMegapixels ?? null,
+          }
+        : extractionRoute === "image"
+          ? (imageOcrMeta ?? {})
+          : {};
+    intakeTelemetry("intake_text_extraction", {
+      ok: false,
+      kind: extractionKind,
+      route: "fallback",
+      extraction_route: extractionRoute,
+      mime: mime.slice(0, 128),
+      file_size_bytes: fileSize,
+      timed_out: timedOut,
+      failure_class: failureClass,
+      error_name: errName.slice(0, 80),
+      error_message_preview: preview,
+      ...imageFailureMeta,
+    });
+    console.error(
+      JSON.stringify({
+        scope: "vehiclix:intake",
+        event: "intake_text_extraction_failure",
+        ts: new Date().toISOString(),
+        extraction_kind: extractionRoute,
+        mime,
+        file_size_bytes: fileSize,
+        timed_out: timedOut,
+        failure_class: failureClass,
+        error_name: errName,
+        error_message_preview: preview,
+        ...imageFailureMeta,
+      })
+    );
+    if (timedOut) {
+      return {
+        ok: false,
+        error: {
+          ok: false,
+          code: "PROCESS_TIMEOUT",
+          message: "Processing took too long. Try a smaller file or a PDF with selectable text.",
+        },
+      };
+    }
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        code: "UPLOAD_FAILED",
+        message: "We could not read text from this file. Try another scan or enter the VIN manually.",
+      },
+    };
+  }
+}
+
 /**
- * Phase 1: upload a single PDF/JPEG/PNG, extract VIN from text/OCR, optionally create a draft vehicle,
- * attach file as VehicleDocument, return decode metadata for client-side form merge (same rules as manual decode).
+ * Upload a single PDF/JPEG/PNG: AI-first extraction, optional legacy text/OCR fallback,
+ * draft + document attach, checksum + decode, client-side form merge.
  */
 export async function processVehicleIntakeDocumentAction(formData: FormData): Promise<VehicleIntakeResult> {
   try {
@@ -283,98 +529,87 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       return { ok: false, code: "UPLOAD_FAILED", message: "Could not read the uploaded file." };
     }
 
-    let plainText: string;
-    const extractionKind = mime === "application/pdf" ? "pdf_text" : "image_ocr";
-    let imageOcrMeta:
-      | {
-          image_width?: number | null;
-          image_height?: number | null;
-          image_megapixels?: number | null;
-          ocr_pass?: number | null;
-          ocr_text_length?: number | null;
-          ocr_duration_ms?: number | null;
+    const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
+    const aiPrimary = isIntakeAiPrimaryEnabled() && hasOpenAiKey;
+    const primaryAiIntakeDisabled = !isIntakeAiPrimaryEnabled() && hasOpenAiKey;
+
+    let primaryExtraction: VehicleIntakeAiExtraction | null = null;
+    let extractionInputKind: "image" | "pdf_text" | null = null;
+    let pdfPlainTextForFallback: string | undefined;
+
+    if (aiPrimary) {
+      try {
+        const bundle = await withTimeout(
+          extractVehicleIntakeWithOpenAI({
+            buffer,
+            mime: mime as "application/pdf" | "image/jpeg" | "image/png",
+          }),
+          AI_EXTRACTION_MS,
+          "AI intake extraction"
+        );
+        if (bundle) {
+          primaryExtraction = bundle.extraction;
+          extractionInputKind = bundle.inputKind;
+          pdfPlainTextForFallback = bundle.pdfPlainTextForFallback;
+          if (primaryExtraction) {
+            intakeTelemetry("intake_ai_primary", { ok: true, input: extractionInputKind });
+          } else {
+            intakeTelemetry("intake_ai_primary", {
+              ok: false,
+              reason: "no_extraction",
+              input: extractionInputKind,
+              pdf_text_reuse: Boolean(pdfPlainTextForFallback),
+            });
+          }
+        } else {
+          intakeTelemetry("intake_ai_primary", { ok: false, reason: "null_result" });
         }
-      | undefined;
-    try {
-      if (mime === "application/pdf") {
-        plainText = await withTimeout(extractTextFromPdfBuffer(buffer), PDF_TEXT_MS, "PDF extraction");
-      } else {
-        const imageResult = await withTimeout(extractTextFromImageBuffer(buffer), IMAGE_OCR_MS, "Image OCR");
-        plainText = imageResult.text;
-        imageOcrMeta = {
-          image_width: imageResult.meta.imageWidth,
-          image_height: imageResult.meta.imageHeight,
-          image_megapixels: imageResult.meta.imageMegapixels,
-          ocr_pass: imageResult.meta.ocrPass,
-          ocr_text_length: imageResult.meta.ocrTextLength,
-          ocr_duration_ms: imageResult.meta.ocrDurationMs,
-        };
-      }
-      intakeTelemetry("intake_text_extraction", {
-        ok: true,
-        kind: extractionKind,
-        length_bucket: textLengthBucket(plainText.length),
-        ...(extractionKind === "image_ocr" ? imageOcrMeta : {}),
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      const errName = e instanceof Error ? e.name : "NonError";
-      const timedOut = msg.includes("timed out");
-      const extractionRoute = mime === "application/pdf" ? "pdf" : "image";
-      const failureClass = classifyIntakeTextExtractionFailure(e, { timedOut, route: extractionRoute });
-      const preview = msg.slice(0, 200);
-      const imageFailureMeta =
-        e instanceof ImageOcrFailureError
-          ? {
-              image_width: e.meta.imageWidth ?? null,
-              image_height: e.meta.imageHeight ?? null,
-              image_megapixels: e.meta.imageMegapixels ?? null,
-            }
-          : extractionRoute === "image"
-            ? (imageOcrMeta ?? {})
-            : {};
-      intakeTelemetry("intake_text_extraction", {
-        ok: false,
-        kind: extractionKind,
-        extraction_route: extractionRoute,
-        mime: mime.slice(0, 128),
-        file_size_bytes: file.size,
-        timed_out: timedOut,
-        failure_class: failureClass,
-        error_name: errName.slice(0, 80),
-        error_message_preview: preview,
-        ...imageFailureMeta,
-      });
-      console.error(
-        JSON.stringify({
-          scope: "vehiclix:intake",
-          event: "intake_text_extraction_failure",
-          ts: new Date().toISOString(),
-          extraction_kind: extractionRoute,
-          mime,
-          file_size_bytes: file.size,
-          timed_out: timedOut,
-          failure_class: failureClass,
-          error_name: errName,
-          error_message_preview: preview,
-          ...imageFailureMeta,
-        })
-      );
-      if (timedOut) {
-        return {
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const timedOut = msg.toLowerCase().includes("timed out");
+        intakeTelemetry("intake_ai_primary", {
           ok: false,
-          code: "PROCESS_TIMEOUT",
-          message: "Processing took too long. Try a smaller file or a PDF with selectable text.",
-        };
+          reason: timedOut ? "timeout" : "error",
+        });
       }
-      return {
+    } else {
+      intakeTelemetry("intake_ai_primary", {
         ok: false,
-        code: "UPLOAD_FAILED",
-        message: "We could not read text from this file. Try another scan or enter the VIN manually.",
-      };
+        reason: !hasOpenAiKey ? "no_api_key" : "disabled",
+      });
     }
 
-    const ranked = collectRankedVinCandidates(plainText);
+    const needsLegacyVin =
+      !primaryExtraction ||
+      primaryExtraction.vin == null ||
+      primaryExtraction.vin.length !== 17;
+
+    let plainText = "";
+    let legacyMeta: LegacyTextResult | null = null;
+
+    if (needsLegacyVin) {
+      if (mime === "application/pdf" && pdfPlainTextForFallback !== undefined) {
+        plainText = pdfPlainTextForFallback;
+        legacyMeta = { plainText, extractionKind: "pdf_text" };
+        intakeTelemetry("intake_fallback_text", {
+          ok: true,
+          route: "pdf_reused_from_ai_parse",
+          had_ai_extraction: true,
+        });
+      } else {
+        const legacy = await extractPlainTextLegacy(buffer, mime, file.size);
+        if (!legacy.ok) {
+          if (!primaryExtraction) {
+            return legacy.error;
+          }
+          intakeTelemetry("intake_fallback_text", { ok: false, had_ai_extraction: true });
+        } else {
+          legacyMeta = legacy.data;
+          plainText = legacy.data.plainText;
+          intakeTelemetry("intake_fallback_text", { ok: true, had_ai_extraction: Boolean(primaryExtraction) });
+        }
+      }
+    }
 
     let vehicleId = vehicleIdRaw;
     let createdDraft = false;
@@ -421,6 +656,38 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       },
     });
 
+    type Ranked = ReturnType<typeof collectRankedVinCandidates>[number];
+    let ranked: Ranked[] = [];
+    let requiresOcrVinReview = false;
+    let usedLegacyImagePath = false;
+
+    if (primaryExtraction?.vin && primaryExtraction.vin.length === 17) {
+      const v = primaryExtraction.vin;
+      const checksumOk = isValidVinCheckDigit(v);
+      const vinConf = primaryExtraction.confidence.vin ?? primaryExtraction.confidence.overall;
+      const autoAccept =
+        checksumOk &&
+        vinConf >= INTAKE_VIN_AUTO_ACCEPT_CONFIDENCE &&
+        primaryExtraction.confidence.overall >= INTAKE_OVERALL_MIN_FOR_AUTO_VIN;
+
+      ranked = [{ vin: v, ocrSubstitutionCount: 0, firstIndex: 0 }];
+      if (!autoAccept) {
+        requiresOcrVinReview = true;
+        intakeTelemetry("intake_vin", {
+          outcome: "ai_review_required",
+          checksum_ok: checksumOk,
+          candidate_count: 1,
+        });
+      } else {
+        intakeTelemetry("intake_vin", { outcome: "single", candidate_count: 1, source: "ai_primary" });
+      }
+    } else if (legacyMeta) {
+      usedLegacyImagePath = legacyMeta.extractionKind === "image_ocr";
+      ranked = collectRankedVinCandidates(plainText);
+    } else {
+      ranked = [];
+    }
+
     if (ranked.length === 0) {
       intakeTelemetry("intake_vin", { outcome: "none", candidate_count: 0 });
       revalidatePath("/admin/inventory");
@@ -435,20 +702,23 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       };
     }
 
-    const isImageOcr = extractionKind === "image_ocr";
     let extractedVin: string;
-    let requiresOcrVinReview = false;
     let ocrVinCandidates: string[] | undefined;
 
-    if (isImageOcr) {
+    if (usedLegacyImagePath) {
       requiresOcrVinReview = true;
       ocrVinCandidates = ranked.slice(0, 3).map((r) => r.vin);
       extractedVin = ocrVinCandidates[0]!;
       intakeTelemetry("intake_vin", {
         outcome: "ocr_review_required",
-        source: "image_ocr",
+        source: "image_ocr_fallback",
         candidate_count: ocrVinCandidates.length,
       });
+    } else if (requiresOcrVinReview && primaryExtraction?.vin) {
+      ocrVinCandidates = ranked.slice(0, 3).map((r) => r.vin);
+      extractedVin = ocrVinCandidates[0]!;
+    } else if (!requiresOcrVinReview && primaryExtraction?.vin) {
+      extractedVin = primaryExtraction.vin;
     } else {
       const minEdits = ranked[0]!.ocrSubstitutionCount;
       const tier = ranked.filter((r) => r.ocrSubstitutionCount === minEdits);
@@ -475,11 +745,11 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
         ocrVinCandidates = ranked.slice(0, 3).map((r) => r.vin);
         intakeTelemetry("intake_vin", {
           outcome: "ocr_review_required",
-          source: "pdf_repaired",
+          source: "pdf_repaired_fallback",
           candidate_count: ocrVinCandidates.length,
         });
       } else {
-        intakeTelemetry("intake_vin", { outcome: "single", candidate_count: 1 });
+        intakeTelemetry("intake_vin", { outcome: "single", candidate_count: 1, source: "text_fallback" });
       }
     }
 
@@ -501,34 +771,73 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       intakeTelemetry("intake_decode", { ok: !decodeFailed && decoded != null });
     } else {
       decodeFailed = true;
-      intakeTelemetry("intake_decode", { ok: false, deferred_ocr_review: true });
+      intakeTelemetry("intake_decode", { ok: false, deferred_review: true });
     }
 
     let aiSuggestions: VehicleIntakeAiSuggestions | null = null;
     let aiMeta: VehicleIntakeAiMeta;
 
-    if (!process.env.OPENAI_API_KEY?.trim()) {
+    const metaPrimaryOff = primaryAiIntakeDisabled ? ({ primaryAiIntakeDisabled: true } as const) : {};
+
+    if (!hasOpenAiKey) {
       aiMeta = { status: "skipped", reason: "no_api_key" };
       intakeTelemetry("intake_openai", { outcome: "skipped_no_key" });
+    } else if (primaryExtraction) {
+      const base = mapVehicleIntakeExtractionToSuggestions(primaryExtraction);
+      const enrichmentDoc = buildEnrichmentDocumentPlainText(plainText, pdfPlainTextForFallback);
+      const primaryBlock = buildPrimaryEnrichmentBlock(primaryExtraction);
+      let secondarySuggestions: VehicleIntakeAiSuggestions | null = null;
+      try {
+        secondarySuggestions = await runIntakeEnrichmentSecondPass(enrichmentDoc, primaryBlock, decoded);
+      } catch {
+        secondarySuggestions = null;
+      }
+      const secondary = Boolean(secondarySuggestions);
+      if (enrichmentDoc.trim().length > 0 || primaryBlock.trim().length > 0) {
+        intakeTelemetry("intake_enrichment_second_pass", {
+          ok: secondary,
+          had_document_text: enrichmentDoc.trim().length > 0,
+          had_primary_block: primaryBlock.trim().length > 0,
+        });
+      }
+      aiSuggestions = mergeIntakeAiSuggestions(base, secondarySuggestions);
+      aiMeta = {
+        status: "applied",
+        extractionInput: extractionInputKind ?? undefined,
+        secondarySuggestions: secondary,
+      };
+      intakeTelemetry("intake_openai", { outcome: "extraction_mapped", secondary });
     } else {
       try {
-        const s = await fetchIntakeFieldSuggestionsFromOpenAI(plainText, decoded);
+        const enrichmentDoc = buildEnrichmentDocumentPlainText(plainText, pdfPlainTextForFallback);
+        const s = await runIntakeEnrichmentSecondPass(enrichmentDoc, "", decoded);
+        if (enrichmentDoc.trim().length > 0) {
+          intakeTelemetry("intake_enrichment_second_pass", {
+            ok: Boolean(s),
+            had_document_text: true,
+            had_primary_block: false,
+          });
+        }
         if (s) {
           aiSuggestions = s;
-          aiMeta = { status: "applied" };
+          aiMeta = {
+            status: "applied",
+            ...metaPrimaryOff,
+          };
           intakeTelemetry("intake_openai", { outcome: "success" });
         } else {
           aiMeta = {
             status: "skipped",
-            reason: "openai_error",
+            reason: "extraction_unusable",
             message: "Model returned no usable structured data.",
+            ...metaPrimaryOff,
           };
           intakeTelemetry("intake_openai", { outcome: "empty_response" });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const timedOut = msg.toLowerCase().includes("timed out");
-        aiMeta = { status: "skipped", reason: "openai_error", message: msg };
+        aiMeta = { status: "skipped", reason: "openai_error", message: msg, ...metaPrimaryOff };
         intakeTelemetry("intake_openai", {
           outcome: timedOut ? "timeout" : "error",
         });
