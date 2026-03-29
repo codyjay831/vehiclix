@@ -7,6 +7,7 @@ import path from "path";
 export interface GCSStorageProviderOptions {
   bucketName: string;
   projectId?: string;
+  credentials?: any;
 }
 
 export class GCSStorageProvider implements StorageProvider {
@@ -16,6 +17,7 @@ export class GCSStorageProvider implements StorageProvider {
   constructor(options: GCSStorageProviderOptions) {
     this.storage = new Storage({
       projectId: options.projectId,
+      credentials: options.credentials,
     });
     this.bucketName = options.bucketName;
   }

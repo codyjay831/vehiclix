@@ -21,11 +21,20 @@ export function normalizeHostname(host: string): string {
 export function isPlatformHost(host: string): boolean {
   const normalized = normalizeHostname(host);
   const platformDomain = normalizeHostname(BRANDING.platformDomain);
-  
-  return (
+
+  if (
     normalized === platformDomain ||
     normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized.endsWith(`.${platformDomain}`)
-  );
+  ) {
+    return true;
+  }
+
+  // Vercel default / preview URLs (e.g. vehiclix.vercel.app) are not under platformDomain
+  if (normalized.endsWith(".vercel.app")) {
+    return true;
+  }
+
+  return false;
 }

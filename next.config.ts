@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Prevent @vercel/nft from packing local private blobs into every traced serverless
+  // function (LocalStorageProvider references storage/documents via fs).
+  outputFileTracingExcludes: {
+    "/*": [
+      "./storage/**/*",
+      "./prisma/migrations_legacy_20260329/**/*",
+    ],
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

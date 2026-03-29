@@ -399,7 +399,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     let storageKey: string;
     try {
       storageKey = await saveFile(file, { isPublic: false });
-    } catch {
+    } catch (e) {
+      console.error("[intake] saveFile failed:", e);
       if (createdDraft) {
         await db.vehicle.delete({ where: { id: vehicleId } }).catch(() => {});
       }

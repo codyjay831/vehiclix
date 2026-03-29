@@ -3,7 +3,15 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
-import { normalizeSlug } from "../src/lib/organization";
+
+/** Mirrors `src/lib/organization.normalizeSlug` — kept local so seed does not import app `db` (top-level await). */
+function normalizeSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 const connectionString = `${process.env.DATABASE_URL}`;
 const pool = new Pool({ connectionString });

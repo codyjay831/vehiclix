@@ -12,3 +12,5 @@ storage/
 # Allow src/lib/storage (provider implementation)
 !src/lib/storage/
 !src/lib/storage/**
+.vercel
+.env*.local

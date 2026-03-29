@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed",
     "db:seed:demo": "npx prisma db seed",
+    "onboard:dealer": "tsx scripts/onboard-dealer.ts",
     "migrate:deploy": "prisma migrate deploy",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",

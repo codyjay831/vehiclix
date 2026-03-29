@@ -1,11 +1,21 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import { StorageProvider, SaveFileOptions } from "./provider";
 
-const PRIVATE_STORAGE_DIR = path.join(process.cwd(), "storage", "documents");
-const PUBLIC_STORAGE_DIR = path.join(process.cwd(), "public", "uploads", "inventory");
+/**
+ * Default local storage paths.
+ * On Vercel or in production-like restricted environments, /tmp is used for ephemeral intake data.
+ */
+const PRIVATE_STORAGE_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "storage", "documents")
+  : path.join(process.cwd(), "storage", "documents");
+
+const PUBLIC_STORAGE_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "public", "uploads", "inventory")
+  : path.join(process.cwd(), "public", "uploads", "inventory");
 
 export class LocalStorageProvider implements StorageProvider {
   async save(file: File, options: SaveFileOptions = {}): Promise<string> {

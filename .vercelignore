@@ -1,0 +1,9 @@
+# Local private files — must not ship to Vercel (NFT also excludes via next.config.ts)
+storage/documents
+
+# Archived migrations — not used by prisma migrate deploy
+prisma/migrations_legacy_20260329
+
+# Local OCR / debug artifacts (often present on dev machines)
+eng.traineddata
+debug-*.log

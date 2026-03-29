@@ -2,13 +2,43 @@ import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
-import "dotenv/config";
+import dotenv from "dotenv";
+import { resolve } from "node:path";
+import { RESERVED_SLUGS } from "../src/lib/constants";
+
+/** Same rules as `src/lib/organization.normalizeSlug` (script must not import `@/lib/db`). */
+const repoRoot = process.cwd();
+dotenv.config({ path: resolve(repoRoot, ".env") });
+dotenv.config({ path: resolve(repoRoot, ".env.local"), override: true });
+dotenv.config({ path: resolve(repoRoot, ".env.production.local"), override: true });
+
+function normalizeSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function validateDealerSlug(raw: string): { ok: true; slug: string } | { ok: false; error: string } {
+  const slug = normalizeSlug(raw.trim().replace(/^\/+/, ""));
+  if (slug.length < 3) {
+    return { ok: false, error: "Slug must be at least 3 characters long." };
+  }
+  if (RESERVED_SLUGS.includes(slug)) {
+    return { ok: false, error: `Slug "${slug}" is reserved and cannot be used.` };
+  }
+  return { ok: true, slug };
+}
 
 /**
  * VEHICLIX PILOT ONBOARDING UTILITY
- * 
+ *
  * Usage:
  * DEALER_NAME="Dealer Name" DEALER_SLUG="dealer-slug" ADMIN_EMAIL="admin@dealer.com" ADMIN_PASSWORD="password" npx tsx scripts/onboard-dealer.ts
+ *
+ * Example (Evo Motors):
+ * DEALER_NAME="Evo Motors" DEALER_SLUG="evomotorsinc" ADMIN_EMAIL="admin@evomotorsinc.com" ADMIN_PASSWORD="..." npm run onboard:dealer
  */
 
 const connectionString = `${process.env.DATABASE_URL}`;
@@ -17,16 +47,23 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const name = process.env.DEALER_NAME;
-  const slug = process.env.DEALER_SLUG;
-  const email = process.env.ADMIN_EMAIL;
+  const name = process.env.DEALER_NAME?.trim();
+  const slugRaw = process.env.DEALER_SLUG;
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
 
-  if (!name || !slug || !email || !password) {
+  if (!name || !slugRaw || !email || !password) {
     console.error("❌ Missing required environment variables:");
     console.error("   DEALER_NAME, DEALER_SLUG, ADMIN_EMAIL, ADMIN_PASSWORD");
     process.exit(1);
   }
+
+  const slugCheck = validateDealerSlug(slugRaw);
+  if (!slugCheck.ok) {
+    console.error(`❌ Invalid slug: ${slugCheck.error}`);
+    process.exit(1);
+  }
+  const slug = slugCheck.slug;
 
   console.log(`🚀 Starting onboarding for: ${name} (${slug})...`);
 

@@ -8,19 +8,31 @@ let instance: StorageProvider | null = null;
 export function getStorageProvider(): StorageProvider {
   if (instance) return instance;
 
-  const providerType = process.env.STORAGE_PROVIDER || "local";
+  const providerType =
+    process.env.STORAGE_PROVIDER || (process.env.GCS_BUCKET_NAME ? "gcs" : "local");
 
   if (providerType === "gcs") {
     const bucketName = process.env.GCS_BUCKET_NAME;
     const projectId = process.env.GCS_PROJECT_ID;
+    const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
     if (!bucketName) {
       throw new Error("GCS_BUCKET_NAME environment variable is not set");
     }
 
+    let credentials;
+    if (credentialsJson) {
+      try {
+        credentials = JSON.parse(credentialsJson);
+      } catch (e) {
+        console.error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON", e);
+      }
+    }
+
     instance = new GCSStorageProvider({
       bucketName,
       projectId,
+      credentials,
     });
   } else {
     instance = new LocalStorageProvider();
