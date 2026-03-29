@@ -20,6 +20,24 @@ if (process.env.NODE_ENV === "production") {
   dotenv.config({ path: resolve(repoRoot, ".env.local"), override: true });
 }
 
+/**
+ * Skip local-dev private-IP guard when Prisma runs in production or known remote builders.
+ * `npm run build` runs `prisma generate` before `next build`, so NODE_ENV is often still
+ * unset during generate even though the host (e.g. Firebase App Hosting) injects a valid
+ * VPC-only Cloud SQL DATABASE_URL.
+ */
+function isRemoteOrProductionPrismaContext(): boolean {
+  if (process.env.NODE_ENV === "production") return true;
+  // Firebase App Hosting: auto-injected at build (and related) — see Firebase App Hosting docs.
+  if (process.env.FIREBASE_CONFIG) return true;
+  if (process.env.FIREBASE_WEBAPP_CONFIG) return true;
+  // Cloud Native Buildpacks (Firebase App Hosting / GCP source builds use CNB).
+  if (process.env.CNB_PLATFORM_API) return true;
+  if (process.env.CI === "true" || process.env.CI === "1") return true;
+  if (process.env.K_SERVICE) return true;
+  return false;
+}
+
 /** Same rules as `src/lib/db.ts` — block silent use of RFC1918 literals in non-production. */
 function isPrivateIpv4Literal(hostname: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
@@ -36,7 +54,8 @@ function isPrivateIpv4Literal(hostname: string): boolean {
 }
 
 function assertPrismaDatabaseUrlSafeForLocalTooling(url: string | undefined): void {
-  if (process.env.NODE_ENV === "production" || !url) return;
+  if (!url) return;
+  if (isRemoteOrProductionPrismaContext()) return;
   if (process.env.ALLOW_PRIVATE_DATABASE_URL_IN_DEV === "true") return;
 
   try {
