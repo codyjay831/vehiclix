@@ -66,18 +66,10 @@ export type VehicleIntakeAiSuggestions = {
   suggestedTrimConfidence?: number | null;
 };
 
-/** Shared flags on all intake AI meta variants (so primary-off is visible even when suggestions are skipped). */
-export type VehicleIntakeAiMetaBase = {
-  /** True when `INTAKE_AI_PRIMARY=0` but OpenAI key exists (primary vision / structured PDF extraction skipped). */
-  primaryAiIntakeDisabled?: boolean;
-};
-
-export type VehicleIntakeAiMeta = VehicleIntakeAiMetaBase &
-  (
-    | {
-        status: "applied";
-        extractionInput?: "image" | "pdf_text";
-        secondarySuggestions?: boolean;
-      }
-    | { status: "skipped"; reason: "no_api_key" | "openai_error" | "extraction_unusable"; message?: string }
-  );
+export type VehicleIntakeAiMeta =
+  | {
+      status: "applied";
+      extractionInput?: "image" | "pdf";
+      secondarySuggestions?: boolean;
+    }
+  | { status: "skipped"; reason: "no_api_key" | "openai_error" | "extraction_unusable"; message?: string };

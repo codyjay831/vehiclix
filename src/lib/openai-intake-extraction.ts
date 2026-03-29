@@ -1,14 +1,16 @@
 /**
- * Server-only: primary vehicle intake extraction via OpenAI (vision for images, text for PDF).
- * Returns normalized structured data only — callers decide checksum, review, and decode.
+ * Server-only: primary vehicle intake extraction via OpenAI.
+ * Images use vision (data URL). PDFs use the Files API + chat `file` input (no server-side rasterization).
  */
 
+import type OpenAI from "openai";
+import { toFile } from "openai";
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import type { VehicleIntakeAiExtraction, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
-import { extractTextFromPdfBuffer } from "@/lib/vin-extraction-server";
 import { withTimeout } from "@/lib/vin-extraction";
 
 const OPENAI_EXTRACTION_MS = 60_000;
-const MAX_PDF_TEXT_CHARS = 14_000;
+const PDF_FILE_PROCESS_MAX_MS = 45_000;
 
 const EXTRACTION_SCHEMA = {
   type: "object",
@@ -184,126 +186,19 @@ export function mapVehicleIntakeExtractionToSuggestions(
   };
 }
 
-export type IntakeExtractionInputKind = "image" | "pdf_text";
+export type IntakeExtractionInputKind = "image" | "pdf";
 
-/** Result of primary AI attempt; `extraction` may be null while PDF text is still reusable for VIN fallback. */
 export type ExtractVehicleIntakeWithOpenAIResult = {
   extraction: VehicleIntakeAiExtraction | null;
   inputKind: IntakeExtractionInputKind;
-  /** Full text from first PDF parse — pass to VIN fallback to avoid calling `extractTextFromPdfBuffer` again. */
-  pdfPlainTextForFallback?: string;
 };
 
-/**
- * Runs OpenAI structured extraction. Images use vision; PDFs use extracted text (not OCR).
- * Returns null if OpenAI cannot be used at all (no key, SDK load failure, PDF read failure).
- * On PDF, returns `pdfPlainTextForFallback` even when `extraction` is null (API/parse failure) for reuse.
- */
-export async function extractVehicleIntakeWithOpenAI(params: {
-  buffer: Buffer;
-  mime: "application/pdf" | "image/jpeg" | "image/png";
-}): Promise<ExtractVehicleIntakeWithOpenAIResult | null> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) return null;
-
-  let OpenAI: (typeof import("openai"))["default"];
-  try {
-    ({ default: OpenAI } = await import("openai"));
-  } catch (e) {
-    console.error("[intake] openai package failed to load:", e);
-    return null;
-  }
-
-  const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
-  const openai = new OpenAI({
-    apiKey,
-    maxRetries: 1,
-    timeout: OPENAI_EXTRACTION_MS - 2000,
-  });
-
-  const systemPrompt = `You extract structured vehicle data from dealership documents, title images, registration photos, listing screenshots, window stickers, or scans.
-
-Rules:
-- Return ONLY the JSON schema fields. Use empty string for unknown text fields. Use -1 for unknown year or mileage when the schema requires integers (year/mileage).
-- VIN: 17 valid VIN characters (no I/O/Q) if clearly visible; otherwise empty string. Never guess a full VIN from partial digits.
-- Year: model year integer only if clearly stated; else -1.
-- Make/model/trim: literal visible text; empty string if not visible.
-- Mileage/odometer: non-negative integer if explicitly shown; else -1.
-- Plate: license plate string if visible; else empty.
-- title_status: CLEAN, SALVAGE, REBUILT, LEMON only when explicitly indicated; else NONE.
-- notes: short factual notes from the document only.
-- raw_text_summary: at most 2 sentences summarizing visible key facts (no PII beyond what is vehicle-related).
-- source_type_guess: best guess of document type.
-- Confidence fields 0.0–1.0: use 0 when unknown; reserve high values only when clearly readable. confidence_overall reflects overall extraction reliability.`;
-
-  type VisionUserPart =
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } };
-
-  if (params.mime === "application/pdf") {
-    let pdfText: string;
-    try {
-      pdfText = await extractTextFromPdfBuffer(params.buffer);
-    } catch {
-      return null;
-    }
-    const excerpt = pdfText.slice(0, MAX_PDF_TEXT_CHARS);
-    const userContent = `Extract vehicle data from this PDF text (may be incomplete if the PDF is scanned).\n\n---\n${excerpt}\n---`;
-
-    try {
-      const completion = await withTimeout(
-        openai.chat.completions.create({
-          model,
-          temperature: 0.1,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "vehicle_intake_extraction",
-              strict: true,
-              schema: EXTRACTION_SCHEMA as unknown as Record<string, unknown>,
-            },
-          },
-        }),
-        OPENAI_EXTRACTION_MS,
-        "OpenAI intake extraction"
-      );
-
-      const content = completion.choices[0]?.message?.content;
-      if (!content) {
-        return { extraction: null, inputKind: "pdf_text", pdfPlainTextForFallback: pdfText };
-      }
-
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(content) as Record<string, unknown>;
-      } catch {
-        return { extraction: null, inputKind: "pdf_text", pdfPlainTextForFallback: pdfText };
-      }
-
-      const extraction = normalizeVehicleIntakeAiExtraction(parsed);
-      return { extraction, inputKind: "pdf_text", pdfPlainTextForFallback: pdfText };
-    } catch {
-      return { extraction: null, inputKind: "pdf_text", pdfPlainTextForFallback: pdfText };
-    }
-  }
-
-  const b64 = params.buffer.toString("base64");
-  const dataUrl = `data:${params.mime};base64,${b64}`;
-  const userContent: VisionUserPart[] = [
-    {
-      type: "text",
-      text: "Extract vehicle data from this image. Read all visible text carefully.",
-    },
-    {
-      type: "image_url",
-      image_url: { url: dataUrl },
-    },
-  ];
-
+async function runStructuredIntakeCompletion(
+  openai: OpenAI,
+  model: string,
+  systemPrompt: string,
+  userContent: ChatCompletionContentPart[]
+): Promise<VehicleIntakeAiExtraction | null> {
   const completion = await withTimeout(
     openai.chat.completions.create({
       model,
@@ -335,6 +230,89 @@ Rules:
     return null;
   }
 
-  const extraction = normalizeVehicleIntakeAiExtraction(parsed);
-  return { extraction, inputKind: "image" };
+  return normalizeVehicleIntakeAiExtraction(parsed);
+}
+
+const SYSTEM_PROMPT = `You extract structured vehicle data from dealership documents, title images, registration photos, listing screenshots, window stickers, or scans.
+
+Rules:
+- Return ONLY the JSON schema fields. Use empty string for unknown text fields. Use -1 for unknown year or mileage when the schema requires integers (year/mileage).
+- VIN: 17 valid VIN characters (no I/O/Q) if clearly visible; otherwise empty string. Never guess a full VIN from partial digits.
+- Year: model year integer only if clearly stated; else -1.
+- Make/model/trim: literal visible text; empty string if not visible.
+- Mileage/odometer: non-negative integer if explicitly shown; else -1.
+- Plate: license plate string if visible; else empty.
+- title_status: CLEAN, SALVAGE, REBUILT, LEMON only when explicitly indicated; else NONE.
+- notes: short factual notes from the document only.
+- raw_text_summary: at most 2 sentences summarizing visible key facts (no PII beyond what is vehicle-related).
+- source_type_guess: best guess of document type.
+- Confidence fields 0.0–1.0: use 0 when unknown; reserve high values only when clearly readable. confidence_overall reflects overall extraction reliability.`;
+
+/**
+ * Runs OpenAI structured extraction. Images use vision; PDFs use uploaded file + chat file input.
+ * Returns null only if OpenAI cannot be used (no key, SDK load failure).
+ */
+export async function extractVehicleIntakeWithOpenAI(params: {
+  buffer: Buffer;
+  mime: "application/pdf" | "image/jpeg" | "image/png";
+}): Promise<ExtractVehicleIntakeWithOpenAIResult | null> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  let OpenAI: (typeof import("openai"))["default"];
+  try {
+    ({ default: OpenAI } = await import("openai"));
+  } catch (e) {
+    console.error("[intake] openai package failed to load:", e);
+    return null;
+  }
+
+  const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
+  const openai = new OpenAI({
+    apiKey,
+    maxRetries: 1,
+    timeout: OPENAI_EXTRACTION_MS - 2000,
+  });
+
+  if (params.mime === "application/pdf") {
+    let fileId: string | undefined;
+    try {
+      const uploadable = await toFile(params.buffer, "vehicle-intake.pdf", { type: "application/pdf" });
+      const created = await openai.files.create({ file: uploadable, purpose: "user_data" });
+      fileId = created.id;
+
+      const processed = await openai.files.waitForProcessing(fileId, {
+        maxWait: PDF_FILE_PROCESS_MAX_MS,
+        pollInterval: 500,
+      });
+      if (processed.status === "error") {
+        return { extraction: null, inputKind: "pdf" };
+      }
+
+      const userText =
+        "This is one uploaded PDF (all pages). Read the full document and extract vehicle data; the VIN is often on an early page.";
+      const extraction = await runStructuredIntakeCompletion(openai, model, SYSTEM_PROMPT, [
+        { type: "text", text: userText },
+        { type: "file", file: { file_id: fileId } },
+      ]);
+      return { extraction, inputKind: "pdf" };
+    } catch (e) {
+      console.error("[intake] PDF extraction failed:", e);
+      return { extraction: null, inputKind: "pdf" };
+    } finally {
+      if (fileId) await openai.files.delete(fileId).catch(() => {});
+    }
+  }
+
+  const dataUrl = `data:${params.mime};base64,${params.buffer.toString("base64")}`;
+  const userText = "Extract vehicle data from this image. Read all visible text carefully.";
+  try {
+    const extraction = await runStructuredIntakeCompletion(openai, model, SYSTEM_PROMPT, [
+      { type: "text", text: userText },
+      { type: "image_url", image_url: { url: dataUrl } },
+    ]);
+    return { extraction, inputKind: "image" };
+  } catch {
+    return { extraction: null, inputKind: "image" };
+  }
 }

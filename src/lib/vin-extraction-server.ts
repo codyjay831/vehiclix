@@ -1,5 +1,4 @@
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -58,65 +57,6 @@ function resolveLocalTesseractEngLangPath(): string {
     return path.join(path.dirname(pkg), "4.0.0_best_int");
   } catch {
     return path.join(process.cwd(), "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int");
-  }
-}
-
-/**
- * pdf-parse → pdfjs-dist evaluates `new DOMMatrix()` at module load before pdf.js's own
- * Node polyfill runs. Cloud Run / Node without DOMMatrix then throws ReferenceError.
- * @napi-rs/canvas is already a dependency of pdf-parse; we install globals first.
- */
-let pdfJsNodePolyfillsApplied = false;
-
-async function ensurePdfJsNodePolyfills(): Promise<void> {
-  if (pdfJsNodePolyfillsApplied) return;
-  const needsCanvasGlobals =
-    typeof globalThis.DOMMatrix === "undefined" ||
-    typeof globalThis.Path2D === "undefined" ||
-    typeof globalThis.ImageData === "undefined";
-  if (!needsCanvasGlobals) {
-    pdfJsNodePolyfillsApplied = true;
-    return;
-  }
-  const canvas = await import("@napi-rs/canvas");
-  if (typeof globalThis.DOMMatrix === "undefined") {
-    globalThis.DOMMatrix = canvas.DOMMatrix as typeof globalThis.DOMMatrix;
-  }
-  if (typeof globalThis.Path2D === "undefined") {
-    globalThis.Path2D = canvas.Path2D as typeof globalThis.Path2D;
-  }
-  if (typeof globalThis.ImageData === "undefined") {
-    globalThis.ImageData = canvas.ImageData as typeof globalThis.ImageData;
-  }
-  pdfJsNodePolyfillsApplied = true;
-}
-
-/**
- * pdf.js Node path uses a "fake worker" that dynamic-imports workerSrc. Default `./pdf.worker.mjs`
- * resolves next to pdf.mjs; standalone traces can omit that file — use an absolute file URL in production.
- *
- * In `next dev`, Turbopack rewrites `require.resolve("pdfjs-dist/...")` in app code to a virtual label string,
- * so `pathToFileURL` produces a bogus `file:` URL. Skip the override in development; pdf.js default works locally.
- */
-function setPdfJsWorkerSrcAbsolute(pdfParseMod: typeof import("pdf-parse")): void {
-  const pdfPkgJson = require.resolve("pdfjs-dist/package.json");
-  const workerPath = path.join(path.dirname(pdfPkgJson), "legacy", "build", "pdf.worker.mjs");
-  pdfParseMod.PDFParse.setWorker(pathToFileURL(workerPath).href);
-}
-
-export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  await ensurePdfJsNodePolyfills();
-  const pdfParseMod = await import("pdf-parse");
-  if (process.env.NODE_ENV === "production") {
-    setPdfJsWorkerSrcAbsolute(pdfParseMod);
-  }
-  const { PDFParse } = pdfParseMod;
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const textResult = await parser.getText();
-    return typeof textResult.text === "string" ? textResult.text : "";
-  } finally {
-    await parser.destroy();
   }
 }
 

@@ -46,6 +46,11 @@ Next.js Server Actions require a stable encryption key in production to prevent 
 3.  **Connect GitHub**: Link your repository (`master` branch).
 4.  **Automatic Detection**: Firebase will detect the Next.js project and `standalone` output.
 
+### PDF smart intake (OpenAI file input)
+
+- **PDF intake does not require Poppler or Ghostscript** on the host. PDFs are uploaded to OpenAI (`purpose: user_data`) and read via chat **file** input alongside the same structured JSON schema as image intake.
+- **`OPENAI_API_KEY`** and a vision-capable intake model (default **`gpt-4o-mini`**, overridable via **`OPENAI_INTAKE_MODEL`**) are required for AI extraction.
+
 ---
 
 ## 3. GitHub Connection & Deployment

@@ -204,29 +204,22 @@ function formatAiConfidence(conf: number | null | undefined): string | null {
 
 function intakeSummaryAiDescription(meta: VehicleIntakeAiMeta): string {
   if (meta.status === "skipped" && meta.reason === "no_api_key") {
-    return "OPENAI_API_KEY is not set — intake used text/OCR fallback where possible. No AI suggestions for this upload.";
+    return "OPENAI_API_KEY is not set — document intake uses AI only for extraction. Enter the VIN and other fields manually if needed.";
   }
   if (meta.status === "skipped" && meta.reason === "openai_error") {
-    const pre = meta.primaryAiIntakeDisabled ? "Primary extraction is off; " : "";
-    return `${pre}Suggestions failed (${meta.message || "request error"}). Intake still completed.`;
+    return `Suggestions failed (${meta.message || "request error"}). Intake still completed.`;
   }
   if (meta.status === "skipped" && meta.reason === "extraction_unusable") {
-    if (meta.primaryAiIntakeDisabled) {
-      return "Primary extraction is off (INTAKE_AI_PRIMARY=0); no usable text-based suggestions came back for this upload.";
-    }
     return "AI returned no usable suggestions for this upload.";
   }
   if (meta.status === "skipped") {
     return "AI suggestions were skipped for this upload.";
   }
   const parts: string[] = [];
-  if (meta.primaryAiIntakeDisabled) {
-    parts.push("Fast primary extraction is off (INTAKE_AI_PRIMARY=0).");
-  }
   if (meta.extractionInput === "image") {
     parts.push("Photos: the model reads the image for structured fields.");
-  } else if (meta.extractionInput === "pdf_text") {
-    parts.push("PDFs: text is extracted first, then interpreted — not full-page vision.");
+  } else if (meta.extractionInput === "pdf") {
+    parts.push("PDFs: the model reads the PDF directly (no local rasterization).");
   }
   parts.push("Tap Accept for each suggestion below; VIN and listing price follow the usual rules.");
   return parts.join(" ");
@@ -1190,10 +1183,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
               <p className="text-sm font-medium text-foreground">Optional: upload a document</p>
               <p className="text-xs text-muted-foreground">
-                PDF, JPG/JPEG, or PNG (max 10MB). We find and validate the VIN, then run NHTSA decode (empty fields
-                only). Photos are read as images; PDFs use extracted text first. If the read is uncertain, we&apos;ll
-                ask you to confirm. Use <span className="font-medium text-foreground">Re-run decode</span> after you edit
-                the VIN. Your listing description and price are never changed by this step.
+                PDF, JPG/JPEG, or PNG (max 10MB). AI reads images directly; PDFs are rasterized (first pages) then read the
+                same way. We validate the VIN check digit and run NHTSA decode (empty fields only). If the VIN isn&apos;t
+                clear enough, enter it manually and use{" "}
+                <span className="font-medium text-foreground">Re-run decode</span>. Your listing description and price
+                are never changed by this step.
               </p>
               <input
                 ref={intakeFileInputRef}
@@ -1240,8 +1234,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                     <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
                       <li>
                         <span className="font-medium text-foreground">VIN </span>
-                        was taken from your upload (AI-assisted read where enabled, with validation — text/OCR fallback
-                        when needed).
+                        was taken from your upload via AI extraction, then validated (check digit) before decode.
                       </li>
                       {lastIntakeSummary.decodeFailed ? (
                         <li>

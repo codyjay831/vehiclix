@@ -35,10 +35,11 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production image, copy all the files and run next
+# Used by docker-compose / Cloud Run container deploys — NOT by Firebase App Hosting (buildpacks).
 FROM base AS runner
 WORKDIR /app
 
-# Install openssl for Prisma engines
+# openssl: Prisma. PDF intake uses OpenAI file input — no Poppler/Ghostscript in the image.
 RUN apk add --no-cache openssl
 
 ENV NODE_ENV production

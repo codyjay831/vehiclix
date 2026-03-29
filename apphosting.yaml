@@ -1,3 +1,5 @@
+# Firebase App Hosting uses Cloud Native Buildpacks (not the repo Dockerfile).
+# PDF intake sends files to OpenAI (Files API + chat file input); no host PDF rasterization.
 runConfig:
   vpcAccess:
     egress: PRIVATE_RANGES_ONLY

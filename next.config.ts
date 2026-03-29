@@ -6,23 +6,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "10mb",
     },
   },
-  /**
-   * pdfjs-dist: fake worker loads pdf.worker.mjs via dynamic import (not traced by default).
-   * Include the worker file in standalone output for server-side PDF text extraction.
-   */
-  outputFileTracingIncludes: {
-    "/*": [
-      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-    ],
-  },
   serverExternalPackages: [
     "@prisma/client",
     "@google-cloud/cloud-sql-connector",
-    "@napi-rs/canvas",
-    "pdf-parse",
-    /** Keep pdfjs on disk so `createRequire(import.meta.url).resolve("pdfjs-dist/...")` stays a real path (not a Turbopack module id). */
-    "pdfjs-dist",
     "tesseract.js",
     "@tesseract.js-data/eng",
     "openai",
