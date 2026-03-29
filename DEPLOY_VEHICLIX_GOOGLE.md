@@ -12,7 +12,7 @@ This document provides instructions for deploying the Vehiclix platform to Googl
 | `DB_PASSWORD` | Secret | Postgres password when `USE_CLOUD_SQL_CONNECTOR=true` (runtime). Do not embed in `DATABASE_URL` for that mode. | **YES** (with connector) |
 | `DB_USER` | Secret/Public | Postgres user for runtime connector. Defaults to `postgres` if unset. | Optional |
 | `DB_NAME` | Secret/Public | Postgres database for runtime connector. Defaults to `vehiclix` if unset. | Optional |
-| `DIRECT_URL` | Secret | Legacy/doc name; this repo’s Prisma 7 config uses `DATABASE_URL` only for CLI. Safe to align with `DATABASE_URL` if you use a direct URL for migrations. | Optional |
+| `DIRECT_URL` | Secret | Not read by `prisma.config.ts` in this repo (migrations and CLI use **`DATABASE_URL` only**). Optional if you keep it elsewhere for documentation parity; the migration job does not need it. | Optional |
 | `AUTH_SECRET` | Secret | Random string for signing session JWTs. | **YES** |
 | `STRIPE_SECRET_KEY` | Secret | Your production Stripe secret key. | **YES** |
 | `STRIPE_WEBHOOK_SECRET` | Secret | Signing secret for Stripe webhooks. | **YES** |
@@ -65,6 +65,12 @@ Next.js Server Actions require a stable encryption key in production to prevent 
 
 Firebase App Hosting **does not** automatically run `prisma migrate deploy`. If production code is newer than the Cloud SQL schema, admin routes that query `Vehicle` (and similar) can throw **Prisma `P2022`**: *column does not exist*. That is **not** fixed by redeploying alone; the **production** database must receive pending migrations.
 
+### Canonical production path (use this)
+
+Run migrations from a **dedicated migration-only image** (`Dockerfile.migrate`) via a **Cloud Run Job**. **Do not** configure production automation to run `prisma migrate deploy` using the **full Next.js app image** — that pattern is deprecated (e.g. an old job such as **`vehiclix-prisma-migrate2`** should be replaced and removed after the new job succeeds once).
+
+Full steps, env vars, networking (VPC private IP vs Cloud SQL socket), and the **build job → execute → then deploy app** order: [docs/deployment/PRODUCTION_PRISMA_CLOUD_RUN_JOB.md](docs/deployment/PRODUCTION_PRISMA_CLOUD_RUN_JOB.md).
+
 ### Rules
 
 1. **`npx prisma migrate deploy` uses `DATABASE_URL` from your shell** (or `.env` via `prisma.config.ts`). It does **not** read Firebase Console by itself. If the log shows `127.0.0.1` and `evomotors_db`, you only updated **local** Postgres — not Cloud SQL.
@@ -73,7 +79,9 @@ Firebase App Hosting **does not** automatically run `prisma migrate deploy`. If 
 3. **Password URL encoding**: If the password contains `@`, `:`, `/`, `#`, `?`, `%`, or spaces, encode them for the URL (e.g. `@` → `%40`). Otherwise Prisma returns **P1013** (invalid URL / port).
 4. **Private IP hosts (`10.x`, `172.16.x`, etc.)**: Your laptop **cannot** reach Cloud SQL’s private IP without **Cloud SQL Auth Proxy** (or an equivalent VPN / bastion). Putting `10.x` in `DATABASE_URL` is correct for **Cloud Run inside the VPC**; from home you must proxy to `127.0.0.1:<localPort>` and point `DATABASE_URL` there for CLI commands.
 
-### Recommended: migrate from your machine via Cloud SQL Auth Proxy
+### Optional fallback: migrate from your machine via Cloud SQL Auth Proxy
+
+Use this when you need a one-off migration from a laptop or an emergency runbook path. Routine production deploys should use the **Cloud Run Job** + **`Dockerfile.migrate`** flow above.
 
 1. Install [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy) and authenticate (`gcloud auth application-default login` or a service account with **Cloud SQL Client**).
 2. Start the proxy against your instance (example; use your real `project:region:instance`):

@@ -12,20 +12,12 @@ export async function getAuthenticatedUser(): Promise<User & { supportOrgId?: st
   const token = cookieStore.get("evo_session")?.value;
   const payload = await decrypt(token);
 
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'auth.ts:getAuthenticatedUser',message:'auth lookup',data:{hasToken:!!token,payloadUserId:payload?.userId ?? null,payloadRole:payload?.role ?? null,payloadOrgId:payload?.organizationId ?? null,supportOrgId:payload?.supportOrgId ?? null},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
-  // #endregion
-
   if (payload) {
     const user = await db.user.findUnique({
       where: { id: payload.userId },
     });
-    
-    if (!user) return null;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b6598c'},body:JSON.stringify({sessionId:'b6598c',location:'auth.ts:getAuthenticatedUserResolved',message:'user resolved',data:{userId:user.id,role:user.role,organizationId:user.organizationId ?? null},timestamp:Date.now(),hypothesisId:'A,C'})}).catch(()=>{});
-    // #endregion
+    if (!user) return null;
 
     // Support mode logic
     if (user.role === Role.SUPER_ADMIN && payload.supportOrgId) {

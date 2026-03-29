@@ -1,0 +1,20 @@
+# Prisma migration runner only — does not build or start Next.js.
+# Use with Cloud Run Jobs (or any orchestrator) so production schema updates
+# never depend on the full app container image.
+FROM node:20-alpine
+
+RUN apk add --no-cache libc6-compat openssl
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+
+ENV NODE_ENV=production
+
+# DATABASE_URL must be supplied at runtime (secret / env). See docs/deployment/PRODUCTION_PRISMA_CLOUD_RUN_JOB.md
+# Equivalent to: npm run migrate:deploy
+CMD ["npx", "prisma", "migrate", "deploy"]

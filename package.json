@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed",
     "db:seed:demo": "npx prisma db seed",
+    "migrate:deploy": "prisma migrate deploy",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "db:migrate:prod:win": "powershell -ExecutionPolicy Bypass -File scripts/run-production-migrate.ps1",
