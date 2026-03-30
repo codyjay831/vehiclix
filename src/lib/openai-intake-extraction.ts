@@ -8,6 +8,7 @@ import { toFile } from "openai";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import type { VehicleIntakeAiExtraction, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { withTimeout } from "@/lib/vin-extraction";
+import { intakeTelemetry } from "@/lib/intake-telemetry";
 
 const OPENAI_EXTRACTION_MS = 60_000;
 const PDF_FILE_PROCESS_MAX_MS = 45_000;
@@ -277,6 +278,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
   if (params.mime === "application/pdf") {
     let fileId: string | undefined;
     try {
+      intakeTelemetry("intake_pdf_upload_start", { size: params.buffer.length });
       const uploadable = await toFile(params.buffer, "vehicle-intake.pdf", { type: "application/pdf" });
       const created = await openai.files.create({ file: uploadable, purpose: "user_data" });
       fileId = created.id;
@@ -285,6 +287,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
         maxWait: PDF_FILE_PROCESS_MAX_MS,
         pollInterval: 500,
       });
+      intakeTelemetry("intake_pdf_processed", { status: processed.status, fileId });
       if (processed.status === "error") {
         return { extraction: null, inputKind: "pdf" };
       }
@@ -297,7 +300,9 @@ export async function extractVehicleIntakeWithOpenAI(params: {
       ]);
       return { extraction, inputKind: "pdf" };
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("[intake] PDF extraction failed:", e);
+      intakeTelemetry("intake_pdf_error", { error: msg });
       return { extraction: null, inputKind: "pdf" };
     } finally {
       if (fileId) await openai.files.delete(fileId).catch(() => {});
@@ -307,12 +312,15 @@ export async function extractVehicleIntakeWithOpenAI(params: {
   const dataUrl = `data:${params.mime};base64,${params.buffer.toString("base64")}`;
   const userText = "Extract vehicle data from this image. Read all visible text carefully.";
   try {
+    intakeTelemetry("intake_image_start", { size: params.buffer.length });
     const extraction = await runStructuredIntakeCompletion(openai, model, SYSTEM_PROMPT, [
       { type: "text", text: userText },
       { type: "image_url", image_url: { url: dataUrl } },
     ]);
     return { extraction, inputKind: "image" };
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    intakeTelemetry("intake_image_error", { error: msg });
     return { extraction: null, inputKind: "image" };
   }
 }

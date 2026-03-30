@@ -297,12 +297,15 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       return { ok: false, code: "UPLOAD_FAILED", message: "No file was uploaded." };
     }
 
+    const size = file.size;
+    const mime = (file.type || "").toLowerCase();
+    intakeTelemetry("intake_request_start", { mime, size });
+
     const vehicleIdRaw = (formData.get("vehicleId") as string | null)?.trim() || "";
     const formVinRaw = (formData.get("formVin") as string | null)?.trim().toUpperCase() || "";
 
-    const mime = (file.type || "").toLowerCase();
     if (!ALLOWED_MIME.has(mime)) {
-      intakeTelemetry("intake_upload", { ok: false, reason: "unsupported_mime" });
+      intakeTelemetry("intake_upload", { ok: false, reason: "unsupported_mime", mime });
       return {
         ok: false,
         code: "UNSUPPORTED_FILE",
@@ -310,8 +313,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       };
     }
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      intakeTelemetry("intake_upload", { ok: false, reason: "file_too_large" });
+    if (size > MAX_FILE_SIZE_BYTES) {
+      intakeTelemetry("intake_upload", { ok: false, reason: "file_too_large", size });
       return {
         ok: false,
         code: "FILE_TOO_LARGE",
@@ -328,12 +331,14 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     }
 
     const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
+    const intakeModel = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
 
     let primaryExtraction: VehicleIntakeAiExtraction | null = null;
     let extractionInputKind: "image" | "pdf" | null = null;
 
     if (hasOpenAiKey) {
       try {
+        intakeTelemetry("intake_ai_start", { model: intakeModel, mime });
         const bundle = await withTimeout(
           extractVehicleIntakeWithOpenAI({
             buffer,
@@ -346,7 +351,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           primaryExtraction = bundle.extraction;
           extractionInputKind = bundle.inputKind;
           if (primaryExtraction) {
-            intakeTelemetry("intake_ai_primary", { ok: true, input: extractionInputKind });
+            intakeTelemetry("intake_ai_primary", {
+              ok: true,
+              input: extractionInputKind,
+              hasVin: !!primaryExtraction.vin,
+              vinLen: primaryExtraction.vin?.length ?? 0,
+            });
           } else {
             intakeTelemetry("intake_ai_primary", {
               ok: false,
@@ -355,7 +365,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
             });
           }
         } else {
-          intakeTelemetry("intake_ai_primary", { ok: false, reason: "null_result" });
+          intakeTelemetry("intake_ai_primary", { ok: false, reason: "bundle_null" });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -363,6 +373,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
         intakeTelemetry("intake_ai_primary", {
           ok: false,
           reason: timedOut ? "timeout" : "error",
+          error: msg,
         });
       }
     } else {
@@ -398,9 +409,14 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     let storageKey: string;
     try {
-      storageKey = await saveFile(file, { isPublic: false });
+      // Re-create the file object from the already-consumed buffer so saveFile (which calls arrayBuffer() again) can read it.
+      const storableFile = new File([buffer], file.name, { type: file.type });
+      storageKey = await saveFile(storableFile, { isPublic: false });
+      intakeTelemetry("intake_storage", { ok: true, key: storageKey.slice(0, 32) });
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("[intake] saveFile failed:", e);
+      intakeTelemetry("intake_storage", { ok: false, error: msg });
       if (createdDraft) {
         await db.vehicle.delete({ where: { id: vehicleId } }).catch(() => {});
       }
@@ -420,7 +436,11 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       : "We couldn't extract enough vehicle info from this file. Upload a clearer image/document or enter the VIN manually.";
 
     if (!primaryExtraction?.vin || primaryExtraction.vin.length !== 17) {
-      intakeTelemetry("intake_vin", { outcome: "none", candidate_count: 0, source: "ai_only" });
+      intakeTelemetry("intake_failure_no_vin", {
+        hasExtraction: !!primaryExtraction,
+        vinLen: primaryExtraction?.vin?.length ?? 0,
+        input: extractionInputKind,
+      });
       revalidatePath("/admin/inventory");
       revalidatePath(`/admin/inventory/${vehicleId}/edit`);
 
@@ -530,8 +550,9 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       aiMeta,
     };
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.error("vehicle-intake:", e);
-    intakeTelemetry("intake_fatal", { ok: false });
+    intakeTelemetry("intake_fatal", { ok: false, error: msg });
     return {
       ok: false,
       code: "UPLOAD_FAILED",
