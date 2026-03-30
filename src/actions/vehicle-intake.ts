@@ -410,7 +410,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     let storageKey: string;
     try {
       // Re-create the file object from the already-consumed buffer so saveFile (which calls arrayBuffer() again) can read it.
-      const storableFile = new File([buffer], file.name, { type: file.type });
+      const storableFile = new File([new Uint8Array(buffer)], file.name, { type: file.type });
       storageKey = await saveFile(storableFile, { isPublic: false });
       intakeTelemetry("intake_storage", { ok: true, key: storageKey.slice(0, 32) });
     } catch (e) {
