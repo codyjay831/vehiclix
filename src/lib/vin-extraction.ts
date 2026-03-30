@@ -138,17 +138,9 @@ function upsertCandidate(
   }
 }
 
-/**
- * Collect all plausible VINs from text: exact windows, illegal-letter fixes, then 1- and 2-position
- * conservative OCR swaps. Ranked by fewer repairs, then earlier position in the document.
- */
-export function collectRankedVinCandidates(plainText: string): RankedVinCandidate[] {
-  if (!plainText || !plainText.trim()) return [];
-  const upper = plainText.toUpperCase().replace(/\s+/g, " ");
-  const best = new Map<string, RankedVinCandidate>();
-
-  for (let i = 0; i <= upper.length - 17; i++) {
-    const rawSlice = upper.slice(i, i + 17);
+function scanWindowsForVins(text: string, best: Map<string, RankedVinCandidate>): void {
+  for (let i = 0; i <= text.length - 17; i++) {
+    const rawSlice = text.slice(i, i + 17);
     const sanitized = sanitizeIllegalVinLetters(rawSlice);
     if (!sanitized) continue;
     const baseEdits = sanitized.fixes;
@@ -195,6 +187,27 @@ export function collectRankedVinCandidates(plainText: string): RankedVinCandidat
         }
       }
     }
+  }
+}
+
+/**
+ * Collect all plausible VINs from text: exact windows, illegal-letter fixes, then 1- and 2-position
+ * conservative OCR swaps. Ranked by fewer repairs, then earlier position in the document.
+ *
+ * Pass 1 scans whitespace-normalized text (contiguous VINs).
+ * Pass 2 scans with all non-alphanumeric chars stripped — catches VINs fragmented by
+ * spaces/punctuation from PDF text extraction where pdfjs-dist joins text items with spaces.
+ */
+export function collectRankedVinCandidates(plainText: string): RankedVinCandidate[] {
+  if (!plainText || !plainText.trim()) return [];
+  const best = new Map<string, RankedVinCandidate>();
+
+  const upper = plainText.toUpperCase().replace(/\s+/g, " ");
+  scanWindowsForVins(upper, best);
+
+  const stripped = plainText.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (stripped.length >= 17 && stripped !== upper) {
+    scanWindowsForVins(stripped, best);
   }
 
   return Array.from(best.values()).sort(

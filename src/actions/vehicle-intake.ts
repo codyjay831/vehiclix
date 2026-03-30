@@ -523,6 +523,14 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     const candidatesFromOcr = collectRankedVinCandidates(localOcrText);
     const ocrVin = candidatesFromOcr.length > 0 ? candidatesFromOcr[0].vin : null;
 
+    intakeTelemetry("intake_vin_resolution_inputs", {
+      aiVin: aiVin ? aiVin.slice(0, 4) + "..." : null,
+      ocrVin: ocrVin ? ocrVin.slice(0, 4) + "..." : null,
+      ocrCandidateCount: candidatesFromOcr.length,
+      ocrTextLen: localOcrText.length,
+      skipLocalOcr,
+    });
+
     let extractedVinFinal: string | null = null;
     let vinSource: "ai" | "local" | "none" = "none";
 

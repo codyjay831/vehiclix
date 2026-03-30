@@ -81,14 +81,18 @@ function emptyToNull(s: unknown): string | null {
 /** 17-char VIN-shaped token (checksum not validated here). */
 export function parseVinTokenFromAi(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const u = raw.replace(/\s+/g, "").toUpperCase();
+  const u = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (u.length !== 17) return null;
   if (/^[A-HJ-NPR-Z0-9]{17}$/.test(u)) return u;
   return null;
 }
 
 export function normalizeVehicleIntakeAiExtraction(raw: Record<string, unknown>): VehicleIntakeAiExtraction {
-  const vin = parseVinTokenFromAi(raw.vin);
+  const rawVinValue = raw.vin;
+  const vin = parseVinTokenFromAi(rawVinValue);
+  if (typeof rawVinValue === "string" && rawVinValue.trim().length > 0 && !vin) {
+    console.warn("[intake] AI returned non-empty VIN that failed parsing:", JSON.stringify(rawVinValue));
+  }
 
   const yearRaw = raw.year;
   let year: number | null = null;
