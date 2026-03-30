@@ -3,8 +3,7 @@
  * Images use vision (data URL). PDFs use the Files API + chat `file` input (no server-side rasterization).
  */
 
-import type OpenAI from "openai";
-import { toFile } from "openai";
+import OpenAI, { toFile } from "openai";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import type { VehicleIntakeAiExtraction, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { withTimeout } from "@/lib/vin-extraction";
@@ -256,17 +255,10 @@ Rules:
 export async function extractVehicleIntakeWithOpenAI(params: {
   buffer: Buffer;
   mime: "application/pdf" | "image/jpeg" | "image/png";
+  apiKeyOverride?: string;
 }): Promise<ExtractVehicleIntakeWithOpenAIResult | null> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = params.apiKeyOverride?.trim() || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
-
-  let OpenAI: (typeof import("openai"))["default"];
-  try {
-    ({ default: OpenAI } = await import("openai"));
-  } catch (e) {
-    console.error("[intake] openai package failed to load:", e);
-    return null;
-  }
 
   const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
   const openai = new OpenAI({
