@@ -2,15 +2,17 @@ import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
-import dotenv from "dotenv";
 import { resolve } from "node:path";
 import { RESERVED_SLUGS } from "../src/lib/constants";
+import { loadEnv } from "./env-loader";
 
 /** Same rules as `src/lib/organization.normalizeSlug` (script must not import `@/lib/db`). */
 const repoRoot = process.cwd();
-dotenv.config({ path: resolve(repoRoot, ".env") });
-dotenv.config({ path: resolve(repoRoot, ".env.local"), override: true });
-dotenv.config({ path: resolve(repoRoot, ".env.production.local"), override: true });
+
+// Explicitly decide which env to load. 
+// For production use: TARGET_ENV=production npm run onboard:dealer
+const target = (process.env.TARGET_ENV as 'local' | 'docker' | 'production') || 'local';
+loadEnv(target);
 
 function normalizeSlug(input: string): string {
   return input

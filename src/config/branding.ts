@@ -1,6 +1,7 @@
 export const BRANDING = {
   companyName: "Vehiclix",
-  platformDomain: process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "vehiclix.app",
+  platformDomain: process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || 
+                  (process.env.NODE_ENV === "development" ? "localhost:3000" : "vehiclix.app"),
   slogan: "Modern Dealership Operating System",
   description: "The premium multi-tenant platform for boutique electric vehicle dealerships. Manage inventory, track deals, and provide a world-class showroom experience.",
   contact: {

@@ -2,7 +2,11 @@ import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
-import "dotenv/config";
+import { loadEnv } from "../scripts/env-loader";
+
+// Default to 'local' for seeding, but allow overrides
+const target = (process.env.TARGET_ENV as 'local' | 'docker' | 'production') || 'local';
+loadEnv(target);
 
 /** Mirrors `src/lib/organization.normalizeSlug` — kept local so seed does not import app `db` (top-level await). */
 function normalizeSlug(input: string): string {

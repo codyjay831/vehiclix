@@ -42,7 +42,9 @@ export async function proxy(request: NextRequest) {
         // Avoid redirect loop: never respond to /admin with 307 → /admin (e.g. www vs non-www or proxy host mismatch)
         return NextResponse.next();
       } else {
-        const platformUrl = new URL(pathname, `https://${BRANDING.platformDomain}`);
+        const protocol = publicOrigin.startsWith("http://") ? "http" : "https";
+        const platformUrl = new URL(pathname, `${protocol}://${BRANDING.platformDomain}`);
+        platformUrl.port = request.nextUrl.port; // Preserve port for local dev
         request.nextUrl.searchParams.forEach((value, key) => {
           platformUrl.searchParams.set(key, value);
         });

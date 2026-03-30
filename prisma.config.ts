@@ -1,11 +1,12 @@
-import dotenv from "dotenv";
 import { resolve } from "node:path";
 import { defineConfig } from "prisma/config";
+import { loadEnv } from "./scripts/env-loader";
 
 const repoRoot = process.cwd();
 
-dotenv.config({ path: resolve(repoRoot, ".env"), override: true });
-dotenv.config({ path: resolve(repoRoot, ".env.local"), override: true });
+// Default to 'local' for prisma CLI, but allow env-based override for CI/Docker
+const target = (process.env.PRISMA_TARGET as 'local' | 'docker' | 'production') || 'local';
+loadEnv(target);
 
 const prismaUrl =
   process.env.DIRECT_URL ||

@@ -842,7 +842,6 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
   const handleIntakeDocumentSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = "";
     if (!file) return;
 
     const fd = new FormData();
@@ -926,6 +925,9 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       });
     } finally {
       setIntakeBusy(false);
+      if (intakeFileInputRef.current) {
+        intakeFileInputRef.current.value = "";
+      }
     }
   };
 
