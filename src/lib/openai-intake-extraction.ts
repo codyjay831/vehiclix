@@ -191,6 +191,8 @@ export type IntakeExtractionInputKind = "image" | "pdf";
 export type ExtractVehicleIntakeWithOpenAIResult = {
   extraction: VehicleIntakeAiExtraction | null;
   inputKind: IntakeExtractionInputKind;
+  /** Non-null when extraction failed — propagated to UI for diagnostics. */
+  extractionError?: string;
 };
 
 async function runStructuredIntakeCompletion(
@@ -263,7 +265,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
   const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o";
   const openai = new OpenAI({
     apiKey,
-    maxRetries: 1,
+    maxRetries: 2,
     timeout: OPENAI_EXTRACTION_MS - 2000,
   });
 
@@ -281,7 +283,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
       });
       intakeTelemetry("intake_pdf_processed", { status: processed.status, fileId });
       if (processed.status === "error") {
-        return { extraction: null, inputKind: "pdf" };
+        return { extraction: null, inputKind: "pdf", extractionError: "OpenAI file processing returned error status" };
       }
 
       const userText =
@@ -295,7 +297,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[intake] PDF extraction failed:", e);
       intakeTelemetry("intake_pdf_error", { error: msg });
-      return { extraction: null, inputKind: "pdf" };
+      return { extraction: null, inputKind: "pdf", extractionError: `PDF AI extraction failed: ${msg}` };
     } finally {
       if (fileId) await openai.files.delete(fileId).catch(() => {});
     }
@@ -312,7 +314,8 @@ export async function extractVehicleIntakeWithOpenAI(params: {
     return { extraction, inputKind: "image" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error("[intake] Image extraction failed:", e);
     intakeTelemetry("intake_image_error", { error: msg });
-    return { extraction: null, inputKind: "image" };
+    return { extraction: null, inputKind: "image", extractionError: `Image AI extraction failed: ${msg}` };
   }
 }

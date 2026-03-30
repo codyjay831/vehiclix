@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
     "tesseract.js",
     "@tesseract.js-data/eng",
     "openai",
+    "pdf-parse",
+    "sharp",
   ],
   deploymentId: process.env.NEXT_DEPLOYMENT_ID || undefined,
   images: {

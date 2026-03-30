@@ -370,6 +370,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     // Phase 1: Parallel extraction and storage
     let primaryExtraction: VehicleIntakeAiExtraction | null = null;
     let extractionInputKind: "image" | "pdf" | null = null;
+    let aiExtractionError: string | null = null;
+    let localOcrError: string | null = null;
     let localVin: string | null = null;
     let localOcrText = "";
     let storageKey: string | null = null;
@@ -398,6 +400,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
             });
           }
         } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          localOcrError = msg;
           console.error("[intake] local ocr failed:", e);
         }
       })());
@@ -427,6 +431,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
             });
           }
         } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          localOcrError = msg;
           console.error("[intake] PDF text extraction failed:", e);
         }
       })());
@@ -449,13 +455,19 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           if (bundle) {
             primaryExtraction = bundle.extraction;
             extractionInputKind = bundle.inputKind;
+            if (bundle.extractionError) {
+              aiExtractionError = bundle.extractionError;
+            }
             intakeTelemetry("intake_ai_primary", {
               ok: !!primaryExtraction,
               input: extractionInputKind,
               hasVin: !!primaryExtraction?.vin,
+              error: bundle.extractionError ?? undefined,
             });
           }
         } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          aiExtractionError = msg;
           console.error("[intake] AI extraction task failed:", e);
         }
       })());
@@ -490,9 +502,16 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       return { ok: false, code: "UPLOAD_FAILED", message: "Could not store the file. Please try again." };
     }
 
+    const diagnosticParts: string[] = [];
+    if (aiExtractionError) diagnosticParts.push(`AI: ${aiExtractionError}`);
+    if (localOcrError) diagnosticParts.push(`OCR: ${localOcrError}`);
+    const diagnosticSuffix = diagnosticParts.length > 0
+      ? ` [${diagnosticParts.join(" | ")}]`
+      : "";
+
     const noVinMessage = !hasOpenAiKey
       ? "AI extraction is not configured (OPENAI_API_KEY). Your file was saved — enter the VIN manually and use Re-run decode if needed."
-      : "We couldn't extract enough vehicle info from this file. Upload a clearer image/document or enter the VIN manually.";
+      : `We couldn't extract enough vehicle info from this file. Upload a clearer image/document or enter the VIN manually.${diagnosticSuffix}`;
 
     // Phase 2: Resolve VIN
     // We prefer a 17-char string that passes checksum (from either source).
@@ -571,6 +590,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
         hasAi: false,
         hasLocal: !!ocrVin,
         ocrTextLen: localOcrText.length,
+        aiError: aiExtractionError ?? undefined,
+        ocrError: localOcrError ?? undefined,
       });
       revalidatePath("/admin/inventory");
       revalidatePath(`/admin/inventory/${vehicleId}/edit`);
