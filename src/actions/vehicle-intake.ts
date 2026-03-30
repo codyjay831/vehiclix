@@ -413,20 +413,18 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       intakeTelemetry("intake_local_ocr_skipped_production", { mime });
     }
 
-    // Local text extraction task (PDFs — fallback for VIN search when AI misses it)
+    // Local text extraction task (PDFs — uses pdfjs-dist legacy build, no canvas/DOMMatrix needed)
     if (mime === "application/pdf") {
       extractionTasks.push((async () => {
         try {
           intakeTelemetry("intake_pdf_text_start", { size: buffer.length });
-          const pdfParseModule = await import("pdf-parse");
-          const pdfParseFn = (pdfParseModule as unknown as { default: (buf: Buffer) => Promise<{ text?: string }> }).default
-            ?? (pdfParseModule as unknown as (buf: Buffer) => Promise<{ text?: string }>);
-          const result: { text?: string } = await withTimeout(
-            pdfParseFn(buffer),
+          const { extractTextFromPdfBuffer } = await import("@/lib/pdf-text-extraction");
+          const text = await withTimeout(
+            extractTextFromPdfBuffer(buffer),
             15_000,
             "PDF text extraction"
           );
-          localOcrText = result.text || "";
+          localOcrText = text || "";
           const candidates = collectRankedVinCandidates(localOcrText);
           if (candidates.length > 0) {
             localVin = candidates[0].vin;
