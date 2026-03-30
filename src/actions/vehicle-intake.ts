@@ -379,8 +379,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     const extractionTasks: Promise<void>[] = [];
 
-    // Local OCR task (images)
-    if (mime.startsWith("image/")) {
+    // Local OCR task (images) — disabled in production/Vercel where tesseract.js worker crashes
+    const skipLocalOcr = Boolean(
+      process.env.VERCEL || (process.env.NODE_ENV === "production" && !process.env.ENABLE_LOCAL_OCR)
+    );
+
+    if (mime.startsWith("image/") && !skipLocalOcr) {
       extractionTasks.push((async () => {
         try {
           intakeTelemetry("intake_local_ocr_start", { mime });
@@ -405,6 +409,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           console.error("[intake] local ocr failed:", e);
         }
       })());
+    } else if (mime.startsWith("image/") && skipLocalOcr) {
+      intakeTelemetry("intake_local_ocr_skipped_production", { mime });
     }
 
     // Local text extraction task (PDFs — fallback for VIN search when AI misses it)
