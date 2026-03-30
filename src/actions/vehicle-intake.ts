@@ -192,6 +192,8 @@ export type VehicleIntakeResult =
       /** Phase 2A: OpenAI field suggestions (null if skipped or failed). */
       aiSuggestions: VehicleIntakeAiSuggestions | null;
       aiMeta: VehicleIntakeAiMeta;
+      /** True when AI extracted useful fields but no VIN was found in the document. */
+      vinNotExtracted?: boolean;
     }
   | {
       ok: false;
@@ -333,10 +335,11 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
     const apiKey = process.env.OPENAI_API_KEY?.trim();
-    const intakeModel = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
+    const intakeModel = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o";
 
     let vehicleId = vehicleIdRaw;
     let createdDraft = false;
+    let draftVin: string | null = null;
 
     // Phase 0: Resolve vehicle context immediately
     if (!vehicleId) {
@@ -349,6 +352,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           : null;
       const v = await createPlaceholderDraftVehicle(organizationId, { id: user.id, role: user.role }, preferredDraftVin);
       vehicleId = v.id;
+      draftVin = v.vin;
       createdDraft = true;
     } else {
       const existing = await db.vehicle.findFirst({
@@ -373,7 +377,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     const extractionTasks: Promise<void>[] = [];
 
-    // Local OCR task
+    // Local OCR task (images)
     if (mime.startsWith("image/")) {
       extractionTasks.push((async () => {
         try {
@@ -395,6 +399,35 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           }
         } catch (e) {
           console.error("[intake] local ocr failed:", e);
+        }
+      })());
+    }
+
+    // Local text extraction task (PDFs — fallback for VIN search when AI misses it)
+    if (mime === "application/pdf") {
+      extractionTasks.push((async () => {
+        try {
+          intakeTelemetry("intake_pdf_text_start", { size: buffer.length });
+          const pdfParseModule = await import("pdf-parse");
+          const pdfParseFn = (pdfParseModule as unknown as { default: (buf: Buffer) => Promise<{ text?: string }> }).default
+            ?? (pdfParseModule as unknown as (buf: Buffer) => Promise<{ text?: string }>);
+          const result: { text?: string } = await withTimeout(
+            pdfParseFn(buffer),
+            15_000,
+            "PDF text extraction"
+          );
+          localOcrText = result.text || "";
+          const candidates = collectRankedVinCandidates(localOcrText);
+          if (candidates.length > 0) {
+            localVin = candidates[0].vin;
+            intakeTelemetry("intake_pdf_text_vin", {
+              ok: true,
+              candidateCount: candidates.length,
+              bestVin: localVin.slice(0, 4) + "...",
+            });
+          }
+        } catch (e) {
+          console.error("[intake] PDF text extraction failed:", e);
         }
       })());
     }
@@ -463,7 +496,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     // Phase 2: Resolve VIN
     // We prefer a 17-char string that passes checksum (from either source).
-    const aiVin = primaryExtraction?.vin;
+    const aiVin = (primaryExtraction as VehicleIntakeAiExtraction | null)?.vin;
     const candidatesFromOcr = collectRankedVinCandidates(localOcrText);
     const ocrVin = candidatesFromOcr.length > 0 ? candidatesFromOcr[0].vin : null;
 
@@ -484,8 +517,58 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     }
 
     if (!extractedVinFinal || extractedVinFinal.length !== 17) {
+      // When AI extracted useful fields but no VIN: succeed with suggestions so they aren't lost.
+      const aiExt = primaryExtraction as VehicleIntakeAiExtraction | null;
+      if (aiExt) {
+        const fallbackVin =
+          formVinRaw.length === 17 && !isProvisionalIntakeVin(formVinRaw)
+            ? formVinRaw
+            : (draftVin ?? "");
+
+        const base = mapVehicleIntakeExtractionToSuggestions(aiExt);
+        const enrichmentDoc = localOcrText;
+        const primaryBlock = buildPrimaryEnrichmentBlock(aiExt);
+        let secondarySuggestions: VehicleIntakeAiSuggestions | null = null;
+        try {
+          secondarySuggestions = await runIntakeEnrichmentSecondPass(enrichmentDoc, primaryBlock, null);
+        } catch {
+          secondarySuggestions = null;
+        }
+        const aiSuggestions = mergeIntakeAiSuggestions(base, secondarySuggestions);
+        const aiMeta: VehicleIntakeAiMeta = {
+          status: "applied",
+          extractionInput: extractionInputKind ?? undefined,
+          secondarySuggestions: Boolean(secondarySuggestions),
+        };
+
+        intakeTelemetry("intake_no_vin_ai_fallback", {
+          createdDraft,
+          has_year: !!aiExt.year,
+          has_make: !!aiExt.make,
+          has_model: !!aiExt.model,
+        });
+
+        revalidatePath("/admin/inventory");
+        revalidatePath(`/admin/inventory/${vehicleId}/edit`);
+
+        return {
+          ok: true,
+          vehicleId,
+          createdDraft,
+          extractedVin: fallbackVin,
+          decoded: null,
+          decodeFailed: true,
+          documentId: docId ?? "",
+          requiresVinConfirmation: false,
+          requiresOcrVinReview: false,
+          vinNotExtracted: true,
+          aiSuggestions,
+          aiMeta,
+        };
+      }
+
       intakeTelemetry("intake_failure_no_vin", {
-        hasAi: !!primaryExtraction,
+        hasAi: false,
         hasLocal: !!ocrVin,
         ocrTextLen: localOcrText.length,
       });
@@ -506,8 +589,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     // If AI failed or didn't find a VIN, but local OCR did, confidence is considered "review required"
     // unless it perfectly passes checksum and we want to trust local OCR (which we do if it's the only source).
-    const vinConf = (vinSource === "ai") ? (primaryExtraction?.confidence.vin ?? 0) : 0;
-    const overallConf = (vinSource === "ai") ? (primaryExtraction?.confidence.overall ?? 0) : 0;
+    const vinConf = (vinSource === "ai") ? ((primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.vin ?? 0) : 0;
+    const overallConf = (vinSource === "ai") ? ((primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.overall ?? 0) : 0;
 
     const autoAccept =
       checksumOk &&
@@ -622,7 +705,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       created_draft: createdDraft,
       requires_vin_confirmation: requiresVinConfirmation,
       requires_ocr_vin_review: requiresOcrVinReview,
-      vin_source: primaryExtraction?.vin === v ? "ai" : "local",
+      vin_source: (primaryExtraction as VehicleIntakeAiExtraction | null)?.vin === v ? "ai" : "local",
     });
 
     return {
@@ -632,7 +715,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       extractedVin: extractedVinFinal,
       decoded,
       decodeFailed,
-      documentId: doc.id,
+      documentId: docId ?? "",
       requiresVinConfirmation,
       requiresOcrVinReview,
       ocrVinCandidates,

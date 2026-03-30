@@ -260,7 +260,7 @@ export async function extractVehicleIntakeWithOpenAI(params: {
   const apiKey = params.apiKeyOverride?.trim() || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return null;
 
-  const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o-mini";
+  const model = process.env.OPENAI_INTAKE_MODEL?.trim() || "gpt-4o";
   const openai = new OpenAI({
     apiKey,
     maxRetries: 1,

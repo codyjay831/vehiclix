@@ -345,9 +345,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       aiSuggestions: VehicleIntakeAiSuggestions | null;
       aiMeta: VehicleIntakeAiMeta;
       documentId?: string;
+      vinNotExtracted?: boolean;
     }) => {
       const beforeDecoder = snapshotDecoderSlice(form.getValues());
-      form.setValue("vin", payload.extractedVin);
+      if (!payload.vinNotExtracted) {
+        form.setValue("vin", payload.extractedVin);
+      }
       if (payload.decoded) {
         applyVinMetadataToVehicleForm(form.setValue, form.getValues, payload.decoded);
       }
@@ -386,7 +389,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       });
 
       const hasDeferred = deferredAiReviewHasPending(deferred);
-      if (payload.decodeFailed) {
+      if (payload.vinNotExtracted) {
+        toast.message(
+          "AI extracted vehicle details from your document but no VIN was found. Enter the VIN manually and review AI suggestions below."
+        );
+      } else if (payload.decodeFailed) {
         toast.message(
           "VIN was set from your document, but NHTSA decode did not return data. Review any identity hints in the intake summary and tap Accept before saving — nothing is applied silently."
         );
@@ -463,6 +470,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiSuggestions?: VehicleIntakeAiSuggestions | null;
         aiMeta?: VehicleIntakeAiMeta;
         documentId?: string;
+        vinNotExtracted?: boolean;
       };
       const aiMeta: VehicleIntakeAiMeta = payload.aiMeta ?? {
         status: "skipped",
@@ -500,6 +508,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiSuggestions,
         aiMeta,
         documentId: payload.documentId,
+        vinNotExtracted: payload.vinNotExtracted,
       });
     } catch {
       /* ignore */
@@ -883,6 +892,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             aiSuggestions: result.aiSuggestions,
             aiMeta: result.aiMeta,
             documentId: result.documentId,
+            vinNotExtracted: result.vinNotExtracted || false,
           })
         );
         router.replace(`/admin/inventory/${result.vehicleId}/edit`);
@@ -922,6 +932,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiSuggestions: result.aiSuggestions,
         aiMeta: result.aiMeta,
         documentId: result.documentId,
+        vinNotExtracted: result.vinNotExtracted,
       });
     } finally {
       setIntakeBusy(false);
