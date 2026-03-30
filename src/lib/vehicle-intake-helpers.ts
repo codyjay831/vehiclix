@@ -24,14 +24,19 @@ export function computeIntakeStillNeededLabels(params: {
   decodeFailed: boolean;
   isEdit: boolean;
   photosCount: number;
+  aiAutoAppliedIdentityKeys?: string[];
 }): string[] {
   const out: string[] = [];
   const vin = (params.vin || "").trim().toUpperCase();
   if (vin.length !== 17 || /^0INTAKE/.test(vin)) {
     out.push("Valid retail VIN (17 characters)");
   }
-  if (params.decodeFailed) {
+  const aiApplied = params.aiAutoAppliedIdentityKeys ?? [];
+  const hasAiIdentity = aiApplied.includes("year") || aiApplied.includes("make") || aiApplied.includes("model");
+  if (params.decodeFailed && !hasAiIdentity) {
     out.push("Vehicle identity (VIN decode failed — verify VIN or enter year/make/model manually)");
+  } else if (params.decodeFailed && hasAiIdentity) {
+    out.push("Vehicle identity (AI-filled from document — confirm year/make/model are correct)");
   }
   if (isIntakePlaceholderIdentityPair(params.make, params.model)) {
     out.push("Make and model (confirm decoder output)");

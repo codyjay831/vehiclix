@@ -17,6 +17,7 @@ import {
   extractVehicleIntakeWithOpenAI,
   mapVehicleIntakeExtractionToSuggestions,
 } from "@/lib/openai-intake-extraction";
+import { extractVinOnlyWithOpenAI, type VinOnlyExtractionResult } from "@/lib/openai-vin-only-extraction";
 import type { VehicleIntakeAiExtraction, VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import { intakeTelemetry } from "@/lib/intake-telemetry";
 import {
@@ -369,6 +370,7 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
 
     // Phase 1: Parallel extraction and storage
     let primaryExtraction: VehicleIntakeAiExtraction | null = null;
+    let vinOnlyResult: VinOnlyExtractionResult | null = null;
     let extractionInputKind: "image" | "pdf" | null = null;
     let aiExtractionError: string | null = null;
     let localOcrError: string | null = null;
@@ -475,6 +477,26 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           console.error("[intake] AI extraction task failed:", e);
         }
       })());
+
+      // Dedicated VIN-only pass (Parallel)
+      extractionTasks.push((async () => {
+        try {
+          intakeTelemetry("intake_vin_only_start", { model: intakeModel, mime });
+          const res = await extractVinOnlyWithOpenAI({
+            buffer,
+            mime: mime as "application/pdf" | "image/jpeg" | "image/png",
+            apiKeyOverride: apiKey,
+          });
+          vinOnlyResult = res;
+          intakeTelemetry("intake_vin_only_complete", {
+            ok: !!res,
+            candidateCount: res?.candidates?.length ?? 0,
+            hasBestGuess: !!res?.bestGuessVin,
+          });
+        } catch (e) {
+          console.error("[intake] dedicated VIN pass failed:", e);
+        }
+      })());
     }
 
     // Storage task (Parallel)
@@ -518,33 +540,69 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       : `We couldn't extract enough vehicle info from this file. Upload a clearer image/document or enter the VIN manually.${diagnosticSuffix}`;
 
     // Phase 2: Resolve VIN
-    // We prefer a 17-char string that passes checksum (from either source).
-    const aiVin = (primaryExtraction as VehicleIntakeAiExtraction | null)?.vin;
+    const aiVinPrimary = (primaryExtraction as VehicleIntakeAiExtraction | null)?.vin;
+    const vinOnlyResultLocal = vinOnlyResult as VinOnlyExtractionResult | null;
+    const aiVinDedicated = vinOnlyResultLocal?.bestGuessVin;
     const candidatesFromOcr = collectRankedVinCandidates(localOcrText);
-    const ocrVin = candidatesFromOcr.length > 0 ? candidatesFromOcr[0].vin : null;
+    const ocrVinBest = candidatesFromOcr.length > 0 ? candidatesFromOcr[0].vin : null;
 
-    intakeTelemetry("intake_vin_resolution_inputs", {
-      aiVin: aiVin ? aiVin.slice(0, 4) + "..." : null,
-      ocrVin: ocrVin ? ocrVin.slice(0, 4) + "..." : null,
+    intakeTelemetry("intake_vin_resolution_inputs_v2", {
+      aiVinPrimary: aiVinPrimary ? aiVinPrimary.slice(0, 4) + "..." : null,
+      aiVinDedicated: aiVinDedicated ? aiVinDedicated.slice(0, 4) + "..." : null,
+      ocrVinBest: ocrVinBest ? ocrVinBest.slice(0, 4) + "..." : null,
       ocrCandidateCount: candidatesFromOcr.length,
-      ocrTextLen: localOcrText.length,
+      aiCandidateCount: vinOnlyResultLocal?.candidates?.length ?? 0,
       skipLocalOcr,
     });
 
-    let extractedVinFinal: string | null = null;
-    let vinSource: "ai" | "local" | "none" = "none";
+    // Rank all candidates to find the best possible match
+    const allCandidates = new Set<string>();
+    if (aiVinDedicated && !isProvisionalIntakeVin(aiVinDedicated)) allCandidates.add(aiVinDedicated);
+    if (aiVinPrimary && !isProvisionalIntakeVin(aiVinPrimary)) allCandidates.add(aiVinPrimary);
+    if (ocrVinBest && !isProvisionalIntakeVin(ocrVinBest)) allCandidates.add(ocrVinBest);
+    
+    vinOnlyResultLocal?.candidates.forEach((c: { vin: string }) => {
+      if (!isProvisionalIntakeVin(c.vin)) allCandidates.add(c.vin);
+    });
+    candidatesFromOcr.forEach(c => {
+      if (!isProvisionalIntakeVin(c.vin)) allCandidates.add(c.vin);
+    });
 
-    // 1. Strict match: prefer a valid checksum from AI or OCR
-    if (aiVin && isValidVinCheckDigit(aiVin)) {
-      extractedVinFinal = aiVin;
-      vinSource = "ai";
-    } else if (ocrVin && isValidVinCheckDigit(ocrVin)) {
-      extractedVinFinal = ocrVin;
-      vinSource = "local";
-    } else {
-      // 2. Fallback: take whatever we have (even if it fails checksum)
-      extractedVinFinal = aiVin || ocrVin;
-      vinSource = aiVin ? "ai" : ocrVin ? "local" : "none";
+    const uniqueCandidates = Array.from(allCandidates);
+    const validChecksumCandidates = uniqueCandidates.filter(v => isValidVinCheckDigit(v));
+
+    let extractedVinFinal: string | null = null;
+    let vinSource: "ai_dedicated" | "ai_primary" | "local" | "none" = "none";
+    let autoAccept = false;
+
+    // 1. Check for high-confidence auto-accept from dedicated pass
+    if (aiVinDedicated && isValidVinCheckDigit(aiVinDedicated)) {
+      const dedicatedConf = vinOnlyResultLocal?.candidates.find((c: { vin: string }) => c.vin === aiVinDedicated)?.confidence ?? 0;
+      if (dedicatedConf >= INTAKE_VIN_AUTO_ACCEPT_CONFIDENCE) {
+        extractedVinFinal = aiVinDedicated;
+        vinSource = "ai_dedicated";
+        autoAccept = true;
+      }
+    }
+
+    // 2. Fallback to primary extraction auto-accept if dedicated failed
+    if (!autoAccept && aiVinPrimary && isValidVinCheckDigit(aiVinPrimary)) {
+      const primaryConf = (primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.vin ?? 0;
+      const overallConf = (primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.overall ?? 0;
+      if (primaryConf >= INTAKE_VIN_AUTO_ACCEPT_CONFIDENCE && overallConf >= INTAKE_OVERALL_MIN_FOR_AUTO_VIN) {
+        extractedVinFinal = aiVinPrimary;
+        vinSource = "ai_primary";
+        autoAccept = true;
+      }
+    }
+
+    // 3. If no auto-accept, pick the "best" for extraction path but mark as review required
+    if (!autoAccept) {
+      extractedVinFinal = aiVinDedicated || aiVinPrimary || ocrVinBest || (validChecksumCandidates.length > 0 ? validChecksumCandidates[0] : (uniqueCandidates.length > 0 ? uniqueCandidates[0] : null));
+      if (extractedVinFinal === aiVinDedicated) vinSource = "ai_dedicated";
+      else if (extractedVinFinal === aiVinPrimary) vinSource = "ai_primary";
+      else if (extractedVinFinal === ocrVinBest) vinSource = "local";
+      else if (extractedVinFinal) vinSource = "ai_dedicated"; // assume from list
     }
 
     if (!extractedVinFinal || extractedVinFinal.length !== 17 || isProvisionalIntakeVin(extractedVinFinal)) {
@@ -572,11 +630,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           secondarySuggestions: Boolean(secondarySuggestions),
         };
 
-        intakeTelemetry("intake_no_vin_ai_fallback", {
+        intakeTelemetry("intake_no_vin_ai_fallback_v2", {
           createdDraft,
           has_year: !!aiExt.year,
           has_make: !!aiExt.make,
           has_model: !!aiExt.model,
+          hadAiCandidates: (vinOnlyResultLocal?.candidates?.length ?? 0) > 0,
         });
 
         revalidatePath("/admin/inventory");
@@ -595,12 +654,14 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
           vinNotExtracted: true,
           aiSuggestions,
           aiMeta,
+          // Surface candidates even if no "best" was promoted
+          ocrVinCandidates: uniqueCandidates.length > 0 ? uniqueCandidates : undefined,
         };
       }
 
-      intakeTelemetry("intake_failure_no_vin", {
-        hasAi: false,
-        hasLocal: !!ocrVin,
+      intakeTelemetry("intake_failure_no_vin_v2", {
+        hasAi: !!vinOnlyResultLocal || !!primaryExtraction,
+        hasLocal: !!ocrVinBest,
         ocrTextLen: localOcrText.length,
         aiError: aiExtractionError ?? undefined,
         ocrError: localOcrError ?? undefined,
@@ -620,31 +681,26 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     const v = extractedVinFinal;
     const checksumOk = isValidVinCheckDigit(v);
 
-    // If AI failed or didn't find a VIN, but local OCR did, confidence is considered "review required"
-    // unless it perfectly passes checksum and we want to trust local OCR (which we do if it's the only source).
-    const vinConf = (vinSource === "ai") ? ((primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.vin ?? 0) : 0;
-    const overallConf = (vinSource === "ai") ? ((primaryExtraction as VehicleIntakeAiExtraction | null)?.confidence.overall ?? 0) : 0;
-
-    const autoAccept =
-      checksumOk &&
-      vinConf >= INTAKE_VIN_AUTO_ACCEPT_CONFIDENCE &&
-      overallConf >= INTAKE_OVERALL_MIN_FOR_AUTO_VIN;
-
-    let requiresOcrVinReview = false;
+    let requiresOcrVinReview = !autoAccept;
     let ocrVinCandidates: string[] | undefined;
 
-    if (!autoAccept) {
-      requiresOcrVinReview = true;
-      // Provide all OCR candidates if available, plus the selected one first
-      const uniqueCandidates = new Set<string>();
-      if (v && !isProvisionalIntakeVin(v)) uniqueCandidates.add(v);
-      candidatesFromOcr.forEach(c => {
-        if (!isProvisionalIntakeVin(c.vin)) uniqueCandidates.add(c.vin);
-      });
-      if (aiVin && !isProvisionalIntakeVin(aiVin)) uniqueCandidates.add(aiVin);
-      ocrVinCandidates = Array.from(uniqueCandidates);
+    if (requiresOcrVinReview) {
+      // Deduplicate and prioritize candidates
+      const prioritizedCandidates = new Set<string>();
+      if (v) prioritizedCandidates.add(v);
+      
+      // Add all checksum-valid candidates first
+      validChecksumCandidates.forEach(c => prioritizedCandidates.add(c));
+      
+      // Add dedicated pass candidates
+      vinOnlyResultLocal?.candidates.forEach((c: { vin: string }) => prioritizedCandidates.add(c.vin));
+      
+      // Add remaining candidates
+      uniqueCandidates.forEach(c => prioritizedCandidates.add(c));
+      
+      ocrVinCandidates = Array.from(prioritizedCandidates).filter(c => !isProvisionalIntakeVin(c));
 
-      intakeTelemetry("intake_vin", {
+      intakeTelemetry("intake_vin_v2", {
         outcome: "ai_review_required",
         checksum_ok: checksumOk,
         candidate_count: ocrVinCandidates.length,
@@ -654,13 +710,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       // If we cleared all candidates, treat it as "no VIN found" fallback
       if (ocrVinCandidates.length === 0) {
         requiresOcrVinReview = false;
-        // Proceeding down to completion; will be caught by logic below that returns ok:true + vinNotExtracted:true if suggestions exist
       }
     } else {
-      intakeTelemetry("intake_vin", {
-        outcome: "single",
+      intakeTelemetry("intake_vin_v2", {
+        outcome: "auto_accept",
         candidate_count: 1,
-        source: vinSource === "ai" ? "ai_primary" : "local_ocr",
+        source: vinSource,
       });
     }
 
@@ -710,8 +765,8 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
             plate: 0,
             titleStatus: 0,
           },
-          notes: localOcrText ? `Local OCR found VIN. Text length: ${localOcrText.length}` : null,
-          rawTextSummary: null,
+          notes: localOcrText ? `Local OCR found VIN. Text length: ${localOcrText.length}` : (vinOnlyResultLocal ? `Dedicated VIN pass found candidates.` : null),
+          rawTextSummary: vinOnlyResultLocal?.reasoning ?? null,
           sourceTypeGuess: "other",
         });
 

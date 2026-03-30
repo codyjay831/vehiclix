@@ -1,13 +1,16 @@
 /**
  * Client-safe intake merge for document AI:
- * - No fields are auto-applied from AI (decoder + explicit Accept only).
+ * - Identity fields auto-apply from AI when NHTSA decode fails and confidence is high enough.
+ * - Lower-confidence identity fields remain deferred for explicit Accept.
  * - Deferred review: mileage, colors, notes, title hints, highlight/feature suggestions (fill-empty rules).
- * - On decode failure, identity hints (year/make/model/trim) are deferred with explicit Accept (same pattern).
  */
 
-import type { UseFormGetValues } from "react-hook-form";
+import type { UseFormGetValues, UseFormSetValue } from "react-hook-form";
 import type { TitleStatusHint, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
-import { INTAKE_CORE_FIELD_SUGGEST_CONFIDENCE } from "@/lib/intake-ai-confidence";
+import {
+  INTAKE_CORE_FIELD_SUGGEST_CONFIDENCE,
+  INTAKE_AI_IDENTITY_AUTO_APPLY_CONFIDENCE,
+} from "@/lib/intake-ai-confidence";
 
 const isStringEmpty = (v: unknown) => v == null || v === undefined || !String(v ?? "").trim();
 const isNumberEmpty = (v: unknown) =>
@@ -54,6 +57,69 @@ function normStr(v: unknown): string {
   return String(v ?? "").trim().toLowerCase();
 }
 
+/**
+ * Auto-apply high-confidence AI identity fields directly into the form when NHTSA decode failed.
+ * Fields below the auto-apply threshold but above the suggest threshold go to deferred review.
+ * Returns the list of field keys that were auto-applied.
+ */
+function autoApplyAiIdentity<T extends VehicleFormAiMergeShape>(
+  suggestions: VehicleIntakeAiSuggestions,
+  setValue: UseFormSetValue<T>,
+  getValues: UseFormGetValues<T>,
+  out: DeferredAiReviewFields
+): string[] {
+  const autoMin = INTAKE_AI_IDENTITY_AUTO_APPLY_CONFIDENCE;
+  const deferMin = INTAKE_CORE_FIELD_SUGGEST_CONFIDENCE;
+  const applied: string[] = [];
+
+  const sy = suggestions.suggestedYear;
+  const syConf = suggestions.suggestedYearConfidence ?? 0;
+  if (sy != null && Number(getValues("year" as never)) !== sy) {
+    if (syConf >= autoMin) {
+      setValue("year" as never, sy as never);
+      applied.push("year");
+    } else if (syConf >= deferMin) {
+      out.suggestedIdentityYear = sy;
+    }
+  }
+
+  const sm = suggestions.suggestedMake;
+  const smConf = suggestions.suggestedMakeConfidence ?? 0;
+  if (sm != null && normStr(getValues("make" as never)) !== normStr(sm)) {
+    if (smConf >= autoMin) {
+      setValue("make" as never, sm as never);
+      applied.push("make");
+    } else if (smConf >= deferMin) {
+      out.suggestedIdentityMake = sm;
+    }
+  }
+
+  const smod = suggestions.suggestedModel;
+  const smodConf = suggestions.suggestedModelConfidence ?? 0;
+  if (smod != null && normStr(getValues("model" as never)) !== normStr(smod)) {
+    if (smodConf >= autoMin) {
+      setValue("model" as never, smod as never);
+      applied.push("model");
+    } else if (smodConf >= deferMin) {
+      out.suggestedIdentityModel = smod;
+    }
+  }
+
+  const st = suggestions.suggestedTrim;
+  const stConf = suggestions.suggestedTrimConfidence ?? 0;
+  if (st != null && normStr(getValues("trim" as never)) !== normStr(st)) {
+    if (stConf >= autoMin) {
+      setValue("trim" as never, st as never);
+      applied.push("trim");
+    } else if (stConf >= deferMin) {
+      out.suggestedIdentityTrim = st;
+    }
+  }
+
+  return applied;
+}
+
+/** Legacy path: defer all identity fields for explicit Accept (used when auto-apply is off). */
 function appendDecodeFailedIdentity<T extends VehicleFormAiMergeShape>(
   suggestions: VehicleIntakeAiSuggestions,
   getValues: UseFormGetValues<T>,
@@ -89,10 +155,12 @@ function appendDecodeFailedIdentity<T extends VehicleFormAiMergeShape>(
 
 function buildDeferredReview<T extends VehicleFormAiMergeShape>(
   suggestions: VehicleIntakeAiSuggestions,
+  setValue: UseFormSetValue<T>,
   getValues: UseFormGetValues<T>,
   opts?: { decodeFailed?: boolean }
-): DeferredAiReviewFields {
+): { deferred: DeferredAiReviewFields; aiAutoAppliedIdentity: string[] } {
   const out: DeferredAiReviewFields = {};
+  let aiAutoAppliedIdentity: string[] = [];
 
   if (suggestions.mileage != null && isNumberEmpty(getValues("mileage" as never))) {
     out.mileage = suggestions.mileage;
@@ -135,7 +203,7 @@ function buildDeferredReview<T extends VehicleFormAiMergeShape>(
   }
 
   if (opts?.decodeFailed) {
-    appendDecodeFailedIdentity(suggestions, getValues, out);
+    aiAutoAppliedIdentity = autoApplyAiIdentity(suggestions, setValue, getValues, out);
   }
 
   const isEmptyDeferred = (d: DeferredAiReviewFields) =>
@@ -152,21 +220,27 @@ function buildDeferredReview<T extends VehicleFormAiMergeShape>(
     !d.suggestedIdentityModel &&
     (d.suggestedIdentityTrim == null || d.suggestedIdentityTrim === "");
 
-  return isEmptyDeferred(out) ? {} : out;
+  return {
+    deferred: isEmptyDeferred(out) ? {} : out,
+    aiAutoAppliedIdentity,
+  };
 }
 
 /**
- * Builds deferred AI review items only. Does not write AI values into the form.
+ * Builds deferred AI review items. When NHTSA decode fails, high-confidence
+ * identity fields are auto-applied directly into the form via setValue;
+ * lower-confidence fields remain deferred for explicit Accept.
  */
 export function applyIntakeAiWithDeferredReview<T extends VehicleFormAiMergeShape>(
+  setValue: UseFormSetValue<T>,
   getValues: UseFormGetValues<T>,
   suggestions: VehicleIntakeAiSuggestions | null,
   opts?: { decodeFailed?: boolean }
-): { deferred: DeferredAiReviewFields } {
+): { deferred: DeferredAiReviewFields; aiAutoAppliedIdentity: string[] } {
   if (!suggestions) {
-    return { deferred: {} };
+    return { deferred: {}, aiAutoAppliedIdentity: [] };
   }
-  return { deferred: buildDeferredReview(suggestions, getValues, opts) };
+  return buildDeferredReview(suggestions, setValue, getValues, opts);
 }
 
 export function deferredAiReviewHasPending(d: DeferredAiReviewFields | null): boolean {

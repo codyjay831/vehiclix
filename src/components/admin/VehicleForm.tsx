@@ -40,7 +40,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle } from "lucide-react";
+import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle, AlertTriangle, ArrowDown } from "lucide-react";
 import { decodeVin, type VinMetadata } from "@/lib/vin";
 import { applyVinMetadataToVehicleForm } from "@/lib/vehicle-vin-form-merge";
 import {
@@ -225,6 +225,44 @@ function intakeSummaryAiDescription(meta: VehicleIntakeAiMeta): string {
   return parts.join(" ");
 }
 
+/**
+ * Compare NHTSA-decoded identity against AI-extracted identity.
+ * Returns human-readable field names where they disagree.
+ */
+function crossValidateDecoderVsAi(
+  decoded: VinMetadata,
+  aiSuggestions: VehicleIntakeAiSuggestions
+): string[] {
+  const mismatches: string[] = [];
+  const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+
+  if (
+    aiSuggestions.suggestedYear != null &&
+    decoded.year != null &&
+    aiSuggestions.suggestedYear !== decoded.year &&
+    (aiSuggestions.suggestedYearConfidence ?? 0) >= 0.6
+  ) {
+    mismatches.push(`year (NHTSA: ${decoded.year}, AI: ${aiSuggestions.suggestedYear})`);
+  }
+  if (
+    aiSuggestions.suggestedMake &&
+    decoded.make &&
+    norm(aiSuggestions.suggestedMake) !== norm(decoded.make) &&
+    (aiSuggestions.suggestedMakeConfidence ?? 0) >= 0.6
+  ) {
+    mismatches.push(`make (NHTSA: ${decoded.make}, AI: ${aiSuggestions.suggestedMake})`);
+  }
+  if (
+    aiSuggestions.suggestedModel &&
+    decoded.model &&
+    norm(aiSuggestions.suggestedModel) !== norm(decoded.model) &&
+    (aiSuggestions.suggestedModelConfidence ?? 0) >= 0.6
+  ) {
+    mismatches.push(`model (NHTSA: ${decoded.model}, AI: ${aiSuggestions.suggestedModel})`);
+  }
+  return mismatches;
+}
+
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters"),
   year: z.coerce.number().min(2010).max(new Date().getFullYear() + 1),
@@ -294,6 +332,8 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
   const [intakeAiAcceptedFields, setIntakeAiAcceptedFields] = React.useState<string[]>([]);
   const [decoderFilledFields, setDecoderFilledFields] = React.useState<string[]>([]);
+  const [aiAutoAppliedIdentityFields, setAiAutoAppliedIdentityFields] = React.useState<string[]>([]);
+  const [intakeVinCandidates, setIntakeVinCandidates] = React.useState<string[]>([]);
   const [deferredAiReview, setDeferredAiReview] = React.useState<DeferredAiReviewFields | null>(null);
   const [lastIntakeSummary, setLastIntakeSummary] = React.useState<{
     decodeFailed: boolean;
@@ -302,6 +342,8 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     /** Decoder-filled keys from this intake merge only (for summary bucket). */
     intakeDecoderFilledKeys: string[];
     vinNotExtracted?: boolean;
+    /** Identity fields auto-applied by AI when NHTSA decode failed. */
+    aiAutoAppliedIdentityKeys?: string[];
   } | null>(null);
 
   const form = useForm<VehicleFormValues>({
@@ -347,6 +389,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       aiMeta: VehicleIntakeAiMeta;
       documentId?: string;
       vinNotExtracted?: boolean;
+      ocrVinCandidates?: string[];
     }) => {
       const beforeDecoder = snapshotDecoderSlice(form.getValues());
       if (payload.vinNotExtracted) {
@@ -365,13 +408,16 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       setDecoderFilledFields(decoderKeys);
 
       let deferred: DeferredAiReviewFields = {};
+      let aiAutoApplied: string[] = [];
       if (payload.aiSuggestions) {
-        const r = applyIntakeAiWithDeferredReview(form.getValues, payload.aiSuggestions, {
+        const r = applyIntakeAiWithDeferredReview(form.setValue, form.getValues, payload.aiSuggestions, {
           decodeFailed: payload.decodeFailed,
         });
         deferred = r.deferred;
+        aiAutoApplied = r.aiAutoAppliedIdentity;
       }
       setIntakeAiAcceptedFields([]);
+      setAiAutoAppliedIdentityFields(aiAutoApplied);
       setDeferredAiReview(deferredAiReviewHasPending(deferred) ? deferred : null);
 
       const docId = payload.documentId?.trim();
@@ -393,17 +439,51 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiSuggestions: payload.aiSuggestions,
         intakeDecoderFilledKeys: decoderKeys,
         vinNotExtracted: payload.vinNotExtracted,
+        aiAutoAppliedIdentityKeys: aiAutoApplied,
       });
+      setIntakeVinCandidates(payload.ocrVinCandidates ?? []);
 
       const hasDeferred = deferredAiReviewHasPending(deferred);
-      if (payload.vinNotExtracted) {
+      const hasCandidates = (payload.ocrVinCandidates?.length ?? 0) > 0;
+      if (payload.vinNotExtracted && hasCandidates && aiAutoApplied.length > 0) {
+        toast.message(
+          `AI extracted vehicle details (auto-filled ${aiAutoApplied.join(", ")}). VIN candidates found — select one above or enter manually.`
+        );
+      } else if (payload.vinNotExtracted && hasCandidates) {
+        toast.message(
+          "VIN candidates found from your document. Select one above or enter the VIN manually."
+        );
+      } else if (payload.vinNotExtracted && aiAutoApplied.length > 0) {
+        toast.message(
+          `AI extracted vehicle details from your document (auto-filled ${aiAutoApplied.join(", ")}). No VIN was found — enter the VIN manually and review remaining suggestions below.`
+        );
+      } else if (payload.vinNotExtracted) {
         toast.message(
           "AI extracted vehicle details from your document but no VIN was found. Enter the VIN manually and review AI suggestions below."
+        );
+      } else if (payload.decodeFailed && aiAutoApplied.length > 0) {
+        toast.message(
+          `NHTSA decode failed, but AI read ${aiAutoApplied.join(", ")} from your document and auto-filled them. Review any remaining suggestions below.`
         );
       } else if (payload.decodeFailed) {
         toast.message(
           "VIN was set from your document, but NHTSA decode did not return data. Review any identity hints in the intake summary and tap Accept before saving — nothing is applied silently."
         );
+      } else if (payload.decoded && payload.aiSuggestions) {
+        const mismatches = crossValidateDecoderVsAi(payload.decoded, payload.aiSuggestions);
+        if (mismatches.length > 0) {
+          toast.warning(
+            `VIN decode applied, but AI read different values for: ${mismatches.join(", ")}. Double-check these fields.`
+          );
+        } else if (hasDeferred) {
+          toast.success(
+            "VIN decode applied. Review AI suggestions in the intake summary — accept or reject each before saving."
+          );
+        } else if (decoderKeys.length > 0) {
+          toast.success("VIN decode filled empty fields from your document. Review before saving.");
+        } else {
+          toast.success("VIN and vehicle details were applied from your document. Review before saving.");
+        }
       } else if (hasDeferred) {
         toast.success(
           "VIN decode applied. Review AI suggestions in the intake summary — accept or reject each before saving."
@@ -520,6 +600,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiMeta,
         documentId: payload.documentId,
         vinNotExtracted: payload.vinNotExtracted,
+        ocrVinCandidates: payload.ocrVinCandidates,
       });
     } catch {
       /* ignore */
@@ -545,8 +626,19 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           decodeFailed: lastIntakeSummary.decodeFailed,
           isEdit,
           photosCount: photos.length,
+          aiAutoAppliedIdentityKeys: lastIntakeSummary.aiAutoAppliedIdentityKeys,
         })
       : [];
+  const currentVin = (watched[0] || "").trim().toUpperCase();
+  const vinIsResolved = currentVin.length === 17 && !isProvisionalIntakeVin(currentVin);
+  const hasIntakeResults = lastIntakeSummary != null;
+  const aiExtractedIdentityKeys = lastIntakeSummary?.aiAutoAppliedIdentityKeys ?? [];
+  const hasAiExtractedIdentity = aiExtractedIdentityKeys.length > 0;
+  const showVinResolutionBanner = hasIntakeResults && !vinIsResolved;
+  const validVinCandidates = intakeVinCandidates.filter(
+    (v) => v.length === 17 && isValidVinCheckDigit(v) && !isProvisionalIntakeVin(v)
+  );
+
   const yearNum = Number(watched[1]);
   const yearPlausible = !Number.isNaN(yearNum) && yearNum >= 1900 && yearNum <= new Date().getFullYear() + 1;
   const section1Complete = Boolean(
@@ -598,6 +690,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           decoderUpdates,
           undefined
         );
+        setIntakeVinCandidates([]);
+        setLastIntakeSummary((prev) =>
+          prev ? { ...prev, decodeFailed: false, vinNotExtracted: false } : prev
+        );
         toast.success("Vehicle data populated from VIN");
       } else {
         toast.error("Could not decode VIN. Please enter details manually.");
@@ -609,7 +705,43 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     }
   };
 
+  const handleSelectVinCandidate = async (vin: string) => {
+    form.setValue("vin", vin);
+    setIntakeVinCandidates([]);
+    setIsDecoding(true);
+    try {
+      const beforeDecoder = snapshotDecoderSlice(form.getValues());
+      const data = await decodeVin(vin);
+      if (data) {
+        applyVinMetadataToVehicleForm(form.setValue, form.getValues, data);
+        const afterDecoder = snapshotDecoderSlice(form.getValues());
+        const decoderKeys = diffDecoderFilledFields(beforeDecoder, afterDecoder);
+        setDecoderFilledFields((prev) => [...new Set([...prev, ...decoderKeys])]);
+        const now = new Date().toISOString();
+        const decoderUpdates = Object.fromEntries(
+          decoderKeys.map((k) => [k, { source: "decoder" as const, acceptedAt: now }])
+        );
+        intakeProvenanceRef.current = mergeIntakeProvenanceFields(
+          intakeProvenanceRef.current,
+          decoderUpdates,
+          undefined
+        );
+        setLastIntakeSummary((prev) =>
+          prev ? { ...prev, decodeFailed: false, vinNotExtracted: false, intakeDecoderFilledKeys: decoderKeys } : prev
+        );
+        toast.success("VIN selected and decoded. Review the auto-filled fields.");
+      } else {
+        toast.error("VIN was set but NHTSA decode returned no data. Verify details manually.");
+      }
+    } catch {
+      toast.error("VIN decode error. Verify details manually.");
+    } finally {
+      setIsDecoding(false);
+    }
+  };
+
   const intakeFieldReviewClass = (field: string) => {
+    if (aiAutoAppliedIdentityFields.includes(field)) return "ring-2 ring-blue-400/60 border-blue-500/40";
     const aiMarked = intakeAiAcceptedFields.includes(field);
     if (aiMarked) return "ring-2 ring-amber-400/60 border-amber-500/40";
     if (decoderFilledFields.includes(field)) return "ring-2 ring-sky-400/50 border-sky-500/35";
@@ -829,6 +961,17 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         </Badge>
       );
     }
+    if (aiAutoAppliedIdentityFields.includes(field)) {
+      bits.push(
+        <Badge
+          key="ai-dec"
+          variant="outline"
+          className="text-[10px] font-normal shrink-0 border-blue-600/40 text-blue-950 dark:text-blue-100"
+        >
+          AI decoded · Needs review
+        </Badge>
+      );
+    }
     const def = deferredAiReview;
     const pending =
       (field === "year" && def?.suggestedIdentityYear != null) ||
@@ -948,6 +1091,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiMeta: result.aiMeta,
         documentId: result.documentId,
         vinNotExtracted: result.vinNotExtracted,
+        ocrVinCandidates: result.ocrVinCandidates,
       });
     } finally {
       setIntakeBusy(false);
@@ -970,6 +1114,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     setIntakeAiAcceptedFields([]);
     setDecoderFilledFields([]);
     setDeferredAiReview(null);
+    setIntakeVinCandidates([]);
     intakeProvenanceRef.current = parseIntakeFieldProvenanceJson(
       initialData?.intakeFieldProvenance ?? null
     );
@@ -1159,6 +1304,81 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   return (
     <Form {...form}>
       <form className="space-y-8 pb-24">
+        {showVinResolutionBanner && (
+          <div className="rounded-lg border-2 border-red-500/40 bg-gradient-to-r from-red-50/50 to-amber-50/30 dark:from-red-950/30 dark:to-amber-950/20 p-5 space-y-4 shadow-sm">
+            <div className="space-y-3">
+              {hasAiExtractedIdentity && (
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-green-800 dark:text-green-300">Vehicle identity extracted</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      AI auto-filled: {aiExtractedIdentityKeys.join(", ")}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-red-800 dark:text-red-300">Valid VIN not found</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Enter or confirm VIN to continue decode. A valid 17-character VIN is required to publish.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {validVinCandidates.length > 0 && (
+              <div className="rounded-md border border-amber-400/50 bg-white/60 dark:bg-background/40 p-4 space-y-3">
+                <p className="text-sm font-semibold text-foreground">VIN candidates from your document — select one:</p>
+                <div className="flex flex-wrap gap-2">
+                  {validVinCandidates.map((vin) => (
+                    <Button
+                      key={vin}
+                      type="button"
+                      variant="outline"
+                      className="font-mono text-sm h-10 px-4 border-2 border-amber-500/60 hover:border-primary hover:bg-primary/5 transition-colors"
+                      onClick={() => void handleSelectVinCandidate(vin)}
+                      disabled={isDecoding || intakeBusy}
+                    >
+                      {isDecoding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {vin}
+                      <span className="ml-2 text-xs text-primary font-semibold">Use this VIN</span>
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Selecting a VIN will auto-fill vehicle details via NHTSA decode.
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="shadow-sm"
+                onClick={() => vinInputRef.current?.focus()}
+              >
+                <ArrowDown className="mr-1.5 h-3.5 w-3.5" />
+                Enter VIN manually
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={intakeBusy || isDecoding}
+                onClick={() => intakeFileInputRef.current?.click()}
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                Re-upload document
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Section 1: Identification */}
         <Card>
           <CardHeader>
@@ -1174,7 +1394,14 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 name="vin"
                 render={({ field, fieldState }) => (
                   <FormItem className="flex-grow">
-                    <FormLabel>VIN</FormLabel>
+                    <FormLabel className="flex items-center gap-2">
+                      VIN
+                      {showVinResolutionBanner && (
+                        <Badge variant="destructive" className="text-[10px] font-semibold">
+                          Required
+                        </Badge>
+                      )}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder="17-character VIN"
@@ -1185,9 +1412,18 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                         }}
                         value={field.value || ""}
                         maxLength={17}
-                        className={cn("uppercase font-mono", requiredFieldErrorClass("vin", fieldState.invalid))}
+                        className={cn(
+                          "uppercase font-mono",
+                          requiredFieldErrorClass("vin", fieldState.invalid),
+                          showVinResolutionBanner && "ring-2 ring-red-400/60 border-red-500/40"
+                        )}
                       />
                     </FormControl>
+                    {showVinResolutionBanner && !fieldState.invalid && (
+                      <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                        Enter a valid 17-character VIN, then click Re-run decode
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1207,6 +1443,34 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                 Re-run decode
               </Button>
             </div>
+
+            {!vinIsResolved && validVinCandidates.length > 0 && lastIntakeSummary && (
+              <div className="rounded-lg border-2 border-amber-500/40 bg-amber-50/30 dark:bg-amber-950/20 p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  VIN candidates found in your document — select one:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {validVinCandidates.map((vin) => (
+                    <Button
+                      key={vin}
+                      type="button"
+                      variant="outline"
+                      className="font-mono text-sm h-10 border-2 border-amber-500/50 hover:border-primary hover:bg-primary/5 transition-colors"
+                      onClick={() => void handleSelectVinCandidate(vin)}
+                      disabled={isDecoding || intakeBusy}
+                    >
+                      {isDecoding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {vin}
+                      <span className="ml-2 text-xs text-primary font-semibold">Use this VIN</span>
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Selecting a VIN will auto-run NHTSA decode and fill vehicle details.
+                </p>
+              </div>
+            )}
 
             <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-4 space-y-3">
               <p className="text-sm font-medium text-foreground">Optional: upload a document</p>
@@ -1272,10 +1536,20 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                           was taken from your upload via AI extraction, then validated (check digit) before decode.
                         </li>
                       )}
-                      {lastIntakeSummary.vinNotExtracted ? (
+                      {lastIntakeSummary.vinNotExtracted && (lastIntakeSummary.aiAutoAppliedIdentityKeys?.length ?? 0) > 0 ? (
+                        <li>
+                          <span className="font-medium text-foreground">Identity (AI): </span>
+                          No VIN found, but AI read {lastIntakeSummary.aiAutoAppliedIdentityKeys!.join(", ")} from the document and auto-filled them. Verify these are correct.
+                        </li>
+                      ) : lastIntakeSummary.vinNotExtracted ? (
                         <li>
                           <span className="font-medium text-foreground">Identity: </span>
                           Enter a 17-character VIN to populate year, make, and model via NHTSA decode.
+                        </li>
+                      ) : lastIntakeSummary.decodeFailed && (lastIntakeSummary.aiAutoAppliedIdentityKeys?.length ?? 0) > 0 ? (
+                        <li>
+                          <span className="font-medium text-foreground">Decode (AI backup): </span>
+                          NHTSA did not return data, but AI read {lastIntakeSummary.aiAutoAppliedIdentityKeys!.join(", ")} from the document and auto-filled them. Verify these are correct, then review any remaining suggestions below.
                         </li>
                       ) : lastIntakeSummary.decodeFailed ? (
                         <li>
@@ -2469,7 +2743,23 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         <Dialog
           open={!!pendingOcrVinReview}
           onOpenChange={(open) => {
-            if (!open) setPendingOcrVinReview(null);
+            if (!open) {
+              const p = pendingOcrVinReview;
+              setPendingOcrVinReview(null);
+              if (p) {
+                setIntakeVinCandidates(p.ocrVinCandidates);
+                mergeIntakeIntoForm({
+                  extractedVin: "",
+                  decoded: null,
+                  decodeFailed: true,
+                  aiSuggestions: p.aiSuggestions,
+                  aiMeta: p.aiMeta,
+                  documentId: p.documentId,
+                  vinNotExtracted: true,
+                  ocrVinCandidates: p.ocrVinCandidates,
+                });
+              }
+            }
           }}
         >
           <DialogContent className="sm:max-w-md" showCloseButton>
@@ -2500,19 +2790,52 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               </RadioGroup>
             ) : null}
             <DialogFooter className="flex-col sm:flex-row gap-2 border-0 bg-transparent p-0 pt-2 sm:justify-end">
-              <Button type="button" variant="outline" onClick={() => setPendingOcrVinReview(null)}>
-                Cancel
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const p = pendingOcrVinReview;
+                  setPendingOcrVinReview(null);
+                  if (p) {
+                    setIntakeVinCandidates(p.ocrVinCandidates);
+                    mergeIntakeIntoForm({
+                      extractedVin: "",
+                      decoded: null,
+                      decodeFailed: true,
+                      aiSuggestions: p.aiSuggestions,
+                      aiMeta: p.aiMeta,
+                      documentId: p.documentId,
+                      vinNotExtracted: true,
+                      ocrVinCandidates: p.ocrVinCandidates,
+                    });
+                  }
+                }}
+              >
+                Decide later
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  const p = pendingOcrVinReview;
                   setPendingOcrVinReview(null);
-                  toast.message("Enter the VIN in the field above, then use Re-run decode if needed.");
+                  if (p) {
+                    setIntakeVinCandidates(p.ocrVinCandidates);
+                    mergeIntakeIntoForm({
+                      extractedVin: "",
+                      decoded: null,
+                      decodeFailed: true,
+                      aiSuggestions: p.aiSuggestions,
+                      aiMeta: p.aiMeta,
+                      documentId: p.documentId,
+                      vinNotExtracted: true,
+                      ocrVinCandidates: p.ocrVinCandidates,
+                    });
+                  }
                   vinInputRef.current?.focus();
                 }}
               >
-                Edit manually
+                Enter VIN manually
               </Button>
               <Button
                 type="button"
