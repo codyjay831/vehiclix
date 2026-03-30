@@ -61,7 +61,8 @@ export function computeIntakeStillNeededLabels(params: {
 
 export function isProvisionalIntakeVin(vin: string): boolean {
   const v = vin.trim().toUpperCase();
-  return /^0INTAKE[A-HJ-NPR-Z0-9]{10}$/.test(v);
+  // Support both 0INTAKE and @INTAKE (visual/legacy compatibility)
+  return /^[0@]INTAKE[A-HJ-NPR-Z0-9]{10}$/.test(v);
 }
 
 /** 17-char placeholder unique per caller checks; not a road-legal VIN (decode not required). */

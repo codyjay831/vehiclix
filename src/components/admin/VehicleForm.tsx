@@ -301,6 +301,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     aiSuggestions: VehicleIntakeAiSuggestions | null;
     /** Decoder-filled keys from this intake merge only (for summary bucket). */
     intakeDecoderFilledKeys: string[];
+    vinNotExtracted?: boolean;
   } | null>(null);
 
   const form = useForm<VehicleFormValues>({
@@ -348,7 +349,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       vinNotExtracted?: boolean;
     }) => {
       const beforeDecoder = snapshotDecoderSlice(form.getValues());
-      if (!payload.vinNotExtracted) {
+      if (payload.vinNotExtracted) {
+        const current = (form.getValues("vin") || "").trim().toUpperCase();
+        if (isProvisionalIntakeVin(current)) {
+          form.setValue("vin", "");
+        }
+      } else {
         form.setValue("vin", payload.extractedVin);
       }
       if (payload.decoded) {
@@ -386,6 +392,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         aiMeta: payload.aiMeta,
         aiSuggestions: payload.aiSuggestions,
         intakeDecoderFilledKeys: decoderKeys,
+        vinNotExtracted: payload.vinNotExtracted,
       });
 
       const hasDeferred = deferredAiReviewHasPending(deferred);
@@ -414,8 +421,12 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     const p = pendingOcrVinReview;
     if (!p || p.ocrVinCandidates.length === 0) return;
     const vin = resolveOcrVinRadioValue(p).trim().toUpperCase();
-    if (vin.length !== 17 || !isValidVinCheckDigit(vin)) {
-      toast.error("Choose a valid 17-character VIN or edit manually.");
+    if (vin.length !== 17 || !isValidVinCheckDigit(vin) || isProvisionalIntakeVin(vin)) {
+      if (isProvisionalIntakeVin(vin)) {
+        toast.error("Provisional VINs cannot be promoted. Select a valid document VIN or enter manually.");
+      } else {
+        toast.error("Choose a valid 17-character VIN or edit manually.");
+      }
       return;
     }
     setIsDecoding(true);
@@ -559,9 +570,13 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const section6Complete = isEdit || photos.length >= 1;
 
   const handleDecodeVin = async () => {
-    const vin = form.getValues("vin");
-    if (!vin || vin.length !== 17) {
-      toast.error("Please enter a valid 17-character VIN first");
+    const vin = (form.getValues("vin") || "").trim().toUpperCase();
+    if (!vin || vin.length !== 17 || isProvisionalIntakeVin(vin)) {
+      if (isProvisionalIntakeVin(vin)) {
+        toast.error("This is a provisional VIN from a draft. Please enter a valid 17-character VIN first.");
+      } else {
+        toast.error("Please enter a valid 17-character VIN first");
+      }
       return;
     }
 
@@ -1234,22 +1249,35 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               <div className="rounded-lg border border-amber-500/30 bg-amber-50/40 dark:bg-amber-950/25 p-4 space-y-4 text-sm">
                 <p className="font-semibold text-foreground">Document intake summary (review required)</p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  VIN was set from your upload. NHTSA decode runs for that VIN and only fills empty identity fields.
-                  Change the VIN and use <span className="font-medium text-foreground">Re-run decode</span> if you need a
-                  fresh decode.
+                  {lastIntakeSummary.vinNotExtracted ? (
+                    "Vehicle details were extracted from your document, but no VIN was found. Enter the VIN manually to run a full decode."
+                  ) : (
+                    <>
+                      VIN was set from your upload. NHTSA decode runs for that VIN and only fills empty identity fields.
+                      Change the VIN and use <span className="font-medium text-foreground">Re-run decode</span> if you need a
+                      fresh decode.
+                    </>
+                  )}
                 </p>
 
                 <div className="grid gap-3">
                   <div className="rounded-md border border-sky-500/30 bg-sky-50/50 dark:bg-sky-950/20 p-3 space-y-2">
                     <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
-                      1 · Auto-filled from VIN and documents
+                      1 · {lastIntakeSummary.vinNotExtracted ? "Manual VIN required" : "Auto-filled from VIN and documents"}
                     </p>
                     <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
-                      <li>
-                        <span className="font-medium text-foreground">VIN </span>
-                        was taken from your upload via AI extraction, then validated (check digit) before decode.
-                      </li>
-                      {lastIntakeSummary.decodeFailed ? (
+                      {!lastIntakeSummary.vinNotExtracted && (
+                        <li>
+                          <span className="font-medium text-foreground">VIN </span>
+                          was taken from your upload via AI extraction, then validated (check digit) before decode.
+                        </li>
+                      )}
+                      {lastIntakeSummary.vinNotExtracted ? (
+                        <li>
+                          <span className="font-medium text-foreground">Identity: </span>
+                          Enter a 17-character VIN to populate year, make, and model via NHTSA decode.
+                        </li>
+                      ) : lastIntakeSummary.decodeFailed ? (
                         <li>
                           <span className="font-medium text-foreground">Decode: </span>
                           NHTSA did not return structured data — use the summary below for any AI identity hints (Accept

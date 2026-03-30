@@ -547,14 +547,14 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
       vinSource = aiVin ? "ai" : ocrVin ? "local" : "none";
     }
 
-    if (!extractedVinFinal || extractedVinFinal.length !== 17) {
+    if (!extractedVinFinal || extractedVinFinal.length !== 17 || isProvisionalIntakeVin(extractedVinFinal)) {
       // When AI extracted useful fields but no VIN: succeed with suggestions so they aren't lost.
       const aiExt = primaryExtraction as VehicleIntakeAiExtraction | null;
       if (aiExt) {
         const fallbackVin =
           formVinRaw.length === 17 && !isProvisionalIntakeVin(formVinRaw)
             ? formVinRaw
-            : (draftVin ?? "");
+            : "";
 
         const base = mapVehicleIntakeExtractionToSuggestions(aiExt);
         const enrichmentDoc = localOcrText;
@@ -636,9 +636,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
     if (!autoAccept) {
       requiresOcrVinReview = true;
       // Provide all OCR candidates if available, plus the selected one first
-      const uniqueCandidates = new Set<string>([v]);
-      candidatesFromOcr.forEach(c => uniqueCandidates.add(c.vin));
-      if (aiVin) uniqueCandidates.add(aiVin);
+      const uniqueCandidates = new Set<string>();
+      if (v && !isProvisionalIntakeVin(v)) uniqueCandidates.add(v);
+      candidatesFromOcr.forEach(c => {
+        if (!isProvisionalIntakeVin(c.vin)) uniqueCandidates.add(c.vin);
+      });
+      if (aiVin && !isProvisionalIntakeVin(aiVin)) uniqueCandidates.add(aiVin);
       ocrVinCandidates = Array.from(uniqueCandidates);
 
       intakeTelemetry("intake_vin", {
@@ -647,6 +650,12 @@ export async function processVehicleIntakeDocumentAction(formData: FormData): Pr
         candidate_count: ocrVinCandidates.length,
         source: vinSource,
       });
+
+      // If we cleared all candidates, treat it as "no VIN found" fallback
+      if (ocrVinCandidates.length === 0) {
+        requiresOcrVinReview = false;
+        // Proceeding down to completion; will be caught by logic below that returns ok:true + vinNotExtracted:true if suggestions exist
+      }
     } else {
       intakeTelemetry("intake_vin", {
         outcome: "single",
