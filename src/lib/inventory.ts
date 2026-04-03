@@ -197,6 +197,12 @@ export async function getPublicVehicleDetailBySlugOrId(
   });
   if (bySlug) return enrichVehicleMedia(bySlug) as VehicleWithMedia | null;
 
+  const byVin = await db.vehicle.findFirst({
+    where: { ...whereBase, vin: slugOrId },
+    select,
+  });
+  if (byVin) return enrichVehicleMedia(byVin) as VehicleWithMedia | null;
+
   const byId = await db.vehicle.findFirst({
     where: { ...whereBase, id: slugOrId },
     select,

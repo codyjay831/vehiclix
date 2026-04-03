@@ -232,55 +232,60 @@ async function createPlaceholderDraftVehicle(
   }
   const year = new Date().getFullYear();
 
-  return db.$transaction(async (tx) => {
-    const vehicle = await tx.vehicle.create({
-      data: {
-        vin,
-        year,
-        make: INTAKE_PLACEHOLDER_MAKE,
-        model: INTAKE_PLACEHOLDER_MODEL,
-        mileage: 0,
-        drivetrain: Drivetrain.AWD,
-        exteriorColor: "TBD",
-        interiorColor: "TBD",
-        condition: InventoryCondition.GOOD,
-        titleStatus: TitleStatus.CLEAN,
-        price: new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE),
-        description: null,
-        highlights: [],
-        features: [],
-        internalNotes: null,
-        vehicleStatus: "DRAFT",
-        organizationId,
-      },
-    });
+  return db.$transaction(
+    async (tx) => {
+      const vehicle = await tx.vehicle.create({
+        data: {
+          vin,
+          year,
+          make: INTAKE_PLACEHOLDER_MAKE,
+          model: INTAKE_PLACEHOLDER_MODEL,
+          mileage: 0,
+          drivetrain: Drivetrain.AWD,
+          exteriorColor: "TBD",
+          interiorColor: "TBD",
+          condition: InventoryCondition.GOOD,
+          titleStatus: TitleStatus.CLEAN,
+          price: new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE),
+          description: null,
+          highlights: [],
+          features: [],
+          internalNotes: null,
+          vehicleStatus: "DRAFT",
+          organizationId,
+        },
+      });
 
-    const slug = await generateUniqueVehicleSlug(tx, organizationId, {
-      id: vehicle.id,
-      year: vehicle.year,
-      make: vehicle.make,
-      model: vehicle.model,
-      trim: vehicle.trim,
-    });
-    await tx.vehicle.update({
-      where: { id: vehicle.id },
-      data: { slug },
-    });
+      const slug = await generateUniqueVehicleSlug(tx, organizationId, {
+        id: vehicle.id,
+        year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
+        trim: vehicle.trim,
+      });
+      await tx.vehicle.update({
+        where: { id: vehicle.id },
+        data: { slug },
+      });
 
-    await tx.activityEvent.create({
-      data: {
-        eventType: "vehicle.created",
-        entityType: "Vehicle",
-        entityId: vehicle.id,
-        organizationId,
-        actorId: actor.id,
-        actorRole: actor.role,
-        metadata: { intakePlaceholder: true },
-      },
-    });
+      await tx.activityEvent.create({
+        data: {
+          eventType: "vehicle.created",
+          entityType: "Vehicle",
+          entityId: vehicle.id,
+          organizationId,
+          actorId: actor.id,
+          actorRole: actor.role,
+          metadata: { intakePlaceholder: true },
+        },
+      });
 
-    return vehicle;
-  });
+      return vehicle;
+    },
+    {
+      timeout: 20000, // 20s for interactive transaction (default is 5s)
+    }
+  );
 }
 
 /**

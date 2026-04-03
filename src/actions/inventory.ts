@@ -59,7 +59,12 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
   
   const vehicle = await db.vehicle.findFirst({
     where: { id: vehicleId, organizationId: user.organizationId },
-    select: { vehicleStatus: true, organizationId: true },
+    select: { 
+      vehicleStatus: true, 
+      organizationId: true,
+      slug: true,
+      organization: { select: { slug: true } }
+    },
   });
 
   if (!vehicle) {
@@ -171,7 +176,13 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${vehicleId}/edit`);
-  revalidatePath(`/inventory/${vehicleId}`);
+  
+  // Public Paths
+  const orgSlug = vehicle.organization.slug;
+  const publicId = vehicle.slug || vehicleId;
+  revalidatePath(`/${orgSlug}/inventory/${publicId}`);
+  revalidatePath(`/${orgSlug}/inventory`);
+  revalidatePath(`/${orgSlug}`);
 }
 
 /**
@@ -187,7 +198,13 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
 
   const vehicle = await db.vehicle.findFirst({
     where: { id: vehicleId, organizationId: user.organizationId },
-    select: { vehicleStatus: true, organizationId: true, price: true },
+    select: { 
+      vehicleStatus: true, 
+      organizationId: true, 
+      price: true,
+      slug: true,
+      organization: { select: { slug: true } }
+    },
   });
 
   if (!vehicle) {
@@ -229,8 +246,13 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
   });
 
   revalidatePath("/admin/inventory");
-  revalidatePath("/inventory");
-  revalidatePath(`/inventory/${vehicleId}`);
+  
+  // Public Paths
+  const orgSlug = vehicle.organization.slug;
+  const publicId = vehicle.slug || vehicleId;
+  revalidatePath(`/${orgSlug}/inventory/${publicId}`);
+  revalidatePath(`/${orgSlug}/inventory`);
+  revalidatePath(`/${orgSlug}`);
 }
 
 /**
@@ -245,6 +267,12 @@ export async function createVehicleAction(formData: FormData) {
   }
 
   const status = formData.get("status") as VehicleStatus;
+
+  const org = await db.organization.findUnique({
+    where: { id: user.organizationId! },
+    select: { slug: true },
+  });
+  if (!org) throw new Error("Organization not found");
 
   // 1. Basic Identification
   const vin = formData.get("vin") as string;
@@ -310,71 +338,83 @@ export async function createVehicleAction(formData: FormData) {
   const isPublishing = status === "LISTED";
 
   // Database Transaction
-  await db.$transaction(async (tx) => {
-    const vehicle = await tx.vehicle.create({
-      data: {
-        vin,
-        year,
-        make,
-        model,
-        trim,
-        bodyStyle,
-        fuelType,
-        transmission,
-        doors,
-        mileage,
-        drivetrain,
-        batteryRangeEstimate: batteryRange,
-        batteryCapacityKWh,
-        batteryChemistry,
-        chargingStandard,
-        exteriorColor,
-        interiorColor,
-        condition,
-        titleStatus,
-        price,
-        description,
-        highlights,
-        features,
-        internalNotes,
-        vehicleStatus: status,
-        organizationId: user.organizationId!,
-        media: {
-          createMany: {
-            data: mediaRecords,
+  await db.$transaction(
+    async (tx) => {
+      const vehicle = await tx.vehicle.create({
+        data: {
+          vin,
+          year,
+          make,
+          model,
+          trim,
+          bodyStyle,
+          fuelType,
+          transmission,
+          doors,
+          mileage,
+          drivetrain,
+          batteryRangeEstimate: batteryRange,
+          batteryCapacityKWh,
+          batteryChemistry,
+          chargingStandard,
+          exteriorColor,
+          interiorColor,
+          condition,
+          titleStatus,
+          price,
+          description,
+          highlights,
+          features,
+          internalNotes,
+          vehicleStatus: status,
+          organizationId: user.organizationId!,
+          media: {
+            createMany: {
+              data: mediaRecords,
+            },
           },
         },
-      },
-    });
+      });
 
-    const slug = await generateUniqueVehicleSlug(tx, user.organizationId!, {
-      id: vehicle.id,
-      year: vehicle.year,
-      make: vehicle.make,
-      model: vehicle.model,
-      trim: vehicle.trim,
-    });
-    await tx.vehicle.update({
-      where: { id: vehicle.id },
-      data: { slug },
-      select: { id: true },
-    });
+      const slug = await generateUniqueVehicleSlug(tx, user.organizationId!, {
+        id: vehicle.id,
+        year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
+        trim: vehicle.trim,
+      });
+      await tx.vehicle.update({
+        where: { id: vehicle.id },
+        data: { slug },
+        select: { id: true },
+      });
 
-    // Create audit event
-    await tx.activityEvent.create({
-      data: {
-        eventType: isPublishing ? "vehicle.published" : "vehicle.created",
-        entityType: "Vehicle",
-        entityId: vehicle.id,
-        organizationId: user.organizationId!,
-        actorId: user.id,
-        actorRole: user.role,
-        metadata: { status: vehicle.vehicleStatus },
-      },
-    });
-  });
+      // Create audit event
+      await tx.activityEvent.create({
+        data: {
+          eventType: isPublishing ? "vehicle.published" : "vehicle.created",
+          entityType: "Vehicle",
+          entityId: vehicle.id,
+          organizationId: user.organizationId!,
+          actorId: user.id,
+          actorRole: user.role,
+          metadata: { status: vehicle.vehicleStatus },
+        },
+      });
+    },
+    {
+      timeout: 20000, // 20s for interactive transaction (default is 5s)
+    }
+  );
 
   revalidatePath("/admin/inventory");
+
+  // Public Paths
+  if (isPublishing) {
+    revalidatePath(`/${org.slug}/inventory`);
+    revalidatePath(`/${org.slug}`);
+  }
+
   redirect("/admin/inventory");
 }
 

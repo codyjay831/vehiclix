@@ -55,8 +55,39 @@ async function seedBootstrap() {
 
   console.log(`✅ SUPER_ADMIN created/updated: ${superAdmin.email}`);
   console.log(`   Temporary Password: ${superAdminPassword}`);
+
+  // Create/Update Cody as second SUPER_ADMIN
+  const codyEmail = "cody@vehiclix.app";
+  const codyPassword = "theadmin123";
+  const codyHash = await bcrypt.hash(codyPassword, 10);
+
+  const codyAdmin = await prisma.user.upsert({
+    where: { email: codyEmail },
+    update: {
+      firstName: "Cody",
+      lastName: "Admin",
+      role: Role.SUPER_ADMIN,
+      passwordHash: codyHash,
+      isStub: false,
+      twoFactorEnabled: false,
+      organizationId: null,
+    },
+    create: {
+      email: codyEmail,
+      firstName: "Cody",
+      lastName: "Admin",
+      role: Role.SUPER_ADMIN,
+      passwordHash: codyHash,
+      isStub: false,
+      twoFactorEnabled: false,
+      organizationId: null,
+    },
+  });
+
+  console.log(`✅ SECONDARY SUPER_ADMIN created/updated: ${codyAdmin.email}`);
+  console.log(`   Temporary Password: ${codyPassword}`);
   console.log("--- Bootstrap Complete ---");
-  return superAdmin;
+  return { superAdmin, codyAdmin };
 }
 
 async function seedDemo() {
