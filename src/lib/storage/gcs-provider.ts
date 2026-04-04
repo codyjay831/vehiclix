@@ -109,8 +109,13 @@ export class GCSStorageProvider implements StorageProvider {
   }
 
   getPublicUrl(key: string): string {
-    // Proxy through the app so the bucket stays private (no public object access needed).
-    return `/api/media/${key}`;
+    const base =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
+      process.env.APP_URL?.replace(/\/$/, "") ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "");
+    return `${base}/api/media/${key}`;
   }
 
   async delete(key: string): Promise<void> {
