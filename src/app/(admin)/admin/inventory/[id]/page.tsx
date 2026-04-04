@@ -1,19 +1,19 @@
 import * as React from "react";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getAdminVehicleDetail } from "@/lib/inventory";
 import { requireUserWithOrg } from "@/lib/auth";
-import { 
-  ChevronLeft, 
-  Edit, 
-  BarChart3, 
-  Eye, 
-  Share2, 
+import {
+  ChevronLeft,
+  Edit,
+  BarChart3,
+  Eye,
+  Share2,
   MessageSquare,
   FileText,
-  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { VehiclePhotosZipDownloadButton } from "@/components/admin/VehiclePhotosZipDownloadButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { VEHICLE_STATUS_LABELS } from "@/types";
@@ -70,13 +70,11 @@ export default async function AdminVehicleDetailPage({ params }: AdminVehiclePag
               Edit Details
             </Link>
           </Button>
-          {vehicle.media.length > 0 && (
-            <Button asChild variant="secondary" className="w-full font-bold flex-1 md:flex-none">
-              <a href={`/api/admin/inventory/${vehicle.id}/photos-zip`} download>
-                <Download className="mr-2 h-4 w-4" />
-                Download Optimized Photos
-              </a>
-            </Button>
+          {vehicle.media.some((m) => m.mediaType === "IMAGE") && (
+            <VehiclePhotosZipDownloadButton
+              vehicleId={vehicle.id}
+              className="w-full flex-1 md:flex-none"
+            />
           )}
           <Button asChild className="w-full font-bold flex-1 md:flex-none">
             <a href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`} target="_blank">

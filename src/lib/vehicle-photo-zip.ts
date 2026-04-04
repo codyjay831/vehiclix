@@ -8,6 +8,38 @@ import { PassThrough, Readable } from "stream";
 import archiver from "archiver";
 import { resolveStorageKey, getReadStream } from "@/lib/storage";
 
+const ALLOWED_ZIP_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
+/**
+ * Derives a safe archive extension from the storage key or URL path — never trusts full key shape for entry names.
+ * Unknown / odd extensions default to `.jpg` (stored variants are typically JPEG).
+ */
+function safeZipExtensionFromStorageKey(storageKey: string): string {
+  const trimmed = storageKey.trim();
+  let probe = trimmed;
+  try {
+    if (probe.startsWith("http://") || probe.startsWith("https://")) {
+      probe = new URL(probe).pathname;
+    }
+  } catch {
+    probe = trimmed.split("?")[0] ?? trimmed;
+  }
+  const base = path.posix.basename(probe.split("?")[0] ?? probe);
+  const ext = path.posix.extname(base).toLowerCase();
+  if (ext === ".jpeg" || ext === ".jpg") return ".jpg";
+  if (ALLOWED_ZIP_EXTS.has(ext)) return ext;
+  return ".jpg";
+}
+
+/** Reject path traversal or directory-like ZIP entry names (defense in depth; names are server-generated). */
+function isSafeZipEntryFileName(name: string): boolean {
+  if (!name || name.length > 200) return false;
+  if (name.includes("/") || name.includes("\\")) return false;
+  if (name.includes("..")) return false;
+  if (name.startsWith(".")) return false;
+  return true;
+}
+
 /** Soft cap aligned with typical inventory limits; avoids pathological serverless memory use. */
 export const MAX_VEHICLE_PHOTOS_ZIP_ENTRIES = 40;
 
@@ -39,13 +71,13 @@ export function buildVehicleZipBaseName(vehicle: {
   return base.replace(/-+/g, "-").replace(/^-|-$/g, "") || "vehicle";
 }
 
-/** Deterministic names: prefix-01.jpg, unique per index. */
+/** Deterministic names: `{baseName}-01.jpg`, unique per index; extension from allowlist only. */
 export function buildZipEntryNames(baseName: string, storageKeys: string[]): string[] {
   const used = new Set<string>();
   const out: string[] = [];
   for (let i = 0; i < storageKeys.length; i++) {
     const ord = String(i + 1).padStart(2, "0");
-    const ext = path.extname(storageKeys[i]) || ".jpg";
+    const ext = safeZipExtensionFromStorageKey(storageKeys[i]!);
     let name = `${baseName}-${ord}${ext}`;
     let n = 2;
     while (used.has(name)) {
@@ -96,6 +128,10 @@ export async function buildVehiclePhotosZipBuffer(entries: ZipBuildEntry[]): Pro
   let appended = 0;
   for (const e of entries) {
     try {
+      if (!isSafeZipEntryFileName(e.entryName)) {
+        console.warn(JSON.stringify({ scope: "photos-zip", event: "entry_unsafe_name_skipped" }));
+        continue;
+      }
       const buf = await readStorageBytesForZip(e.storageKey);
       archive.append(buf, { name: e.entryName });
       appended++;

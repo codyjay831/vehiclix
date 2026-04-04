@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 import { decodeVin, type VinMetadata } from "@/lib/vin";
 import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
+import { compressVehicleImagesForUpload } from "@/lib/client/vehicle-image-upload-compress";
 import { applyVinMetadataToVehicleForm } from "@/lib/vehicle-vin-form-merge";
 import {
   applyIntakeAiWithDeferredReview,
@@ -324,6 +325,7 @@ interface VehicleFormProps {
 export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [optimizingPhotos, setOptimizingPhotos] = React.useState(false);
   const [isDecoding, setIsDecoding] = React.useState(false);
   const [intakeBusy, setIntakeBusy] = React.useState(false);
   const [photos, setPhotos] = React.useState<File[]>([]);
@@ -1262,8 +1264,22 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             return;
           }
         }
+      }
 
-        // 3. Submit Create
+      // Vehicle listing photos only: same path for create + edit. Intake PDFs/images use
+      // `handleIntakeDocumentSelected` → `processVehicleIntakeDocumentAction` (separate FormData, never this helper).
+      let photosToUpload = photos;
+      if (photos.length > 0) {
+        setOptimizingPhotos(true);
+        try {
+          photosToUpload = await compressVehicleImagesForUpload(photos);
+        } finally {
+          setOptimizingPhotos(false);
+        }
+      }
+
+      if (!isEdit) {
+        // 3. Submit Create (`photosToUpload` order matches `photos` for multipart `photos` parts)
         const formData = new FormData();
         formData.append("status", status!);
         Object.entries(valuesForSave).forEach(([key, value]) => {
@@ -1273,7 +1289,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             formData.append(key, value.toString());
           }
         });
-        photos.forEach((photo) => formData.append("photos", photo));
+        photosToUpload.forEach((photo) => formData.append("photos", photo));
 
         const prov = intakeProvenanceRef.current;
         if (
@@ -1308,7 +1324,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           formData.append("intakeFieldProvenance", JSON.stringify(provEdit));
         }
 
-        photos.forEach((photo) => formData.append("photos", photo));
+        photosToUpload.forEach((photo) => formData.append("photos", photo));
 
         const updateResult = await updateVehicleAction(initialData.id, formData);
         if (!updateResult.ok) {
@@ -1322,6 +1338,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     } catch (error: any) {
       toast.error(error.message || "Something went wrong");
     } finally {
+      setOptimizingPhotos(false);
       setIsSubmitting(false);
     }
   };
@@ -2757,7 +2774,8 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               {section6Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
             </CardTitle>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Upload photos for this vehicle. Images are optimized automatically (thumbnail, card, and gallery sizes).
+              Upload photos for this vehicle. Large JPEG, PNG, or WebP files are resized in your browser before
+              upload; the server then produces thumbnail, card, and gallery sizes.
               {isEdit ? (
                 <>
                   {" "}
@@ -3172,7 +3190,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             >
               Cancel
             </Button>
-            <div className="flex gap-4">
+            <div className="flex gap-4 items-center">
+              {optimizingPhotos ? (
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Optimizing photos…</span>
+              ) : null}
               {!isEdit ? (
                 <>
                   <Button

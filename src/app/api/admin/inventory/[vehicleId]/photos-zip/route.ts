@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Role } from "@prisma/client";
+import { MediaType, Role } from "@prisma/client";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -16,6 +16,7 @@ export const runtime = "nodejs";
 /**
  * GET /api/admin/inventory/[vehicleId]/photos-zip
  * Authenticated dealer/staff (or support-mode super-admin): ZIP of optimized photos (gallery, else url).
+ * Only `MediaType.IMAGE` rows — not VIDEO and not `VehicleDocument` / intake PDFs.
  */
 export async function GET(
   _request: Request,
@@ -53,6 +54,7 @@ export async function GET(
       make: true,
       model: true,
       media: {
+        where: { mediaType: MediaType.IMAGE },
         orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
         select: {
           galleryUrl: true,
