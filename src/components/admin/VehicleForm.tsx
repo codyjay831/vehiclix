@@ -1310,8 +1310,13 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
         photos.forEach((photo) => formData.append("photos", photo));
 
-        await updateVehicleAction(initialData.id, formData);
+        const updateResult = await updateVehicleAction(initialData.id, formData);
+        if (!updateResult.ok) {
+          toast.error(updateResult.error || "Save failed");
+          return;
+        }
         toast.success("Vehicle updated successfully");
+        router.refresh();
         router.push(`/admin/inventory/${initialData.id}/edit`);
       }
     } catch (error: any) {
