@@ -10,7 +10,8 @@ import {
   Eye, 
   Share2, 
   MessageSquare,
-  FileText
+  FileText,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,13 +63,21 @@ export default async function AdminVehicleDetailPage({ params }: AdminVehiclePag
             VIN: {vehicle.vin}
           </p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <Button asChild variant="outline" className="w-full font-bold flex-1 md:flex-none">
             <Link href={`/admin/inventory/${vehicle.id}/edit`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit Details
             </Link>
           </Button>
+          {vehicle.media.length > 0 && (
+            <Button asChild variant="secondary" className="w-full font-bold flex-1 md:flex-none">
+              <a href={`/api/admin/inventory/${vehicle.id}/photos-zip`} download>
+                <Download className="mr-2 h-4 w-4" />
+                Download Optimized Photos
+              </a>
+            </Button>
+          )}
           <Button asChild className="w-full font-bold flex-1 md:flex-none">
             <a href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`} target="_blank">
               <Eye className="mr-2 h-4 w-4" />

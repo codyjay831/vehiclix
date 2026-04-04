@@ -1,7 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
-import { StorageProvider, SaveFileOptions } from "./provider";
+import { StorageProvider, SaveFileOptions, SaveBufferOptions } from "./provider";
 import path from "path";
 
 export interface GCSStorageProviderOptions {
@@ -48,14 +48,37 @@ export class GCSStorageProvider implements StorageProvider {
     return filename;
   }
 
+  async saveBuffer(buffer: Buffer, options: SaveBufferOptions): Promise<string> {
+    const bucket = this.storage.bucket(this.bucketName);
+    const filename = options.filename;
+    const prefix = options.isPublic ? "inventory/" : "documents/";
+    const storageKey = `${prefix}${filename}`;
+
+    const gcsFile = bucket.file(storageKey);
+    await gcsFile.save(buffer, {
+      resumable: false,
+      contentType: options.contentType ?? "application/octet-stream",
+      metadata: {
+        cacheControl: "public, max-age=31536000",
+      },
+    });
+
+    return filename;
+  }
+
   async getReadStream(key: string): Promise<Readable> {
     const bucket = this.storage.bucket(this.bucketName);
-    const gcsFile = bucket.file(`documents/${key}`);
-    const [exists] = await gcsFile.exists();
-    if (!exists) {
-      throw new Error(`File not found in GCS: ${key}`);
+    const inventoryFile = bucket.file(`inventory/${key}`);
+    const [invExists] = await inventoryFile.exists();
+    if (invExists) {
+      return inventoryFile.createReadStream();
     }
-    return gcsFile.createReadStream();
+    const docFile = bucket.file(`documents/${key}`);
+    const [docExists] = await docFile.exists();
+    if (docExists) {
+      return docFile.createReadStream();
+    }
+    throw new Error(`File not found in GCS: ${key}`);
   }
 
   getPublicUrl(key: string): string {

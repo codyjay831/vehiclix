@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { toast } from "sonner";
+import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
 
 // Helper to get status badge styling
 const getStatusBadgeVariant = (status: VehicleStatus) => {
@@ -167,7 +168,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                   <TableCell>
                     {vehicle.media[0] ? (
                       <img
-                        src={vehicle.media[0].url}
+                        src={vehicleMediaAdminThumbUrl(vehicle.media[0])}
                         alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
                         className="h-10 w-10 rounded object-cover border bg-muted"
                       />

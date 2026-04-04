@@ -42,6 +42,7 @@ import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions
 import { cn } from "@/lib/utils";
 import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle, AlertTriangle, ArrowDown } from "lucide-react";
 import { decodeVin, type VinMetadata } from "@/lib/vin";
+import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
 import { applyVinMetadataToVehicleForm } from "@/lib/vehicle-vin-form-merge";
 import {
   applyIntakeAiWithDeferredReview,
@@ -307,6 +308,27 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
   const [intakeBusy, setIntakeBusy] = React.useState(false);
   const [photos, setPhotos] = React.useState<File[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const existingSavedMedia = React.useMemo(() => {
+    if (!isEdit || !initialData?.media || !Array.isArray(initialData.media)) return [];
+    return initialData.media as Array<{
+      id: string;
+      url: string;
+      thumbUrl?: string | null;
+      cardUrl?: string | null;
+      galleryUrl?: string | null;
+      displayOrder: number;
+    }>;
+  }, [isEdit, initialData?.media]);
+
+  const totalPhotoCount = existingSavedMedia.length + photos.length;
+
+  const newPhotoPreviewUrls = React.useMemo(() => photos.map((p) => URL.createObjectURL(p)), [photos]);
+  React.useEffect(() => {
+    return () => {
+      newPhotoPreviewUrls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [newPhotoPreviewUrls]);
   const intakeFileInputRef = React.useRef<HTMLInputElement>(null);
   const vinInputRef = React.useRef<HTMLInputElement | null>(null);
   const [pendingOcrVinReview, setPendingOcrVinReview] = React.useState<{
@@ -624,8 +646,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           interiorColor: String(watched[7] ?? ""),
           price: watched[10] as number | "",
           decodeFailed: lastIntakeSummary.decodeFailed,
-          isEdit,
-          photosCount: photos.length,
+          totalPhotoCount,
           aiAutoAppliedIdentityKeys: lastIntakeSummary.aiAutoAppliedIdentityKeys,
         })
       : [];
@@ -659,7 +680,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     String(watched[11] ?? "").trim() ||
     (Array.isArray(watched[12]) && watched[12].some((h: string) => String(h ?? "").trim()))
   );
-  const section6Complete = isEdit || photos.length >= 1;
+  const section6Complete = totalPhotoCount >= 1;
 
   const handleDecodeVin = async () => {
     const vin = (form.getValues("vin") || "").trim().toUpperCase();
@@ -1263,9 +1284,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           formData.append("intakeFieldProvenance", JSON.stringify(provEdit));
         }
 
+        photos.forEach((photo) => formData.append("photos", photo));
+
         await updateVehicleAction(initialData.id, formData);
         toast.success("Vehicle updated successfully");
-        router.push("/admin/inventory");
+        router.push(`/admin/inventory/${initialData.id}/edit`);
       }
     } catch (error: any) {
       toast.error(error.message || "Something went wrong");
@@ -1274,21 +1297,37 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     }
   };
 
+  const addPhotoFiles = (list: FileList | File[]) => {
+    const next = Array.from(list).filter((f) => f.type.startsWith("image/"));
+    if (next.length === 0) return;
+    setPhotos((prev) => [...prev, ...next]);
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setPhotos([...photos, ...Array.from(e.target.files)]);
+    if (e.target.files?.length) {
+      addPhotoFiles(e.target.files);
+    }
+  };
+
+  const handlePhotoDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files?.length) {
+      addPhotoFiles(e.dataTransfer.files);
     }
   };
 
   const removePhoto = (index: number) => {
-    setPhotos(photos.filter((_, i) => i !== index));
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
   const setPrimaryPhoto = (index: number) => {
-    const newPhotos = [...photos];
-    const [selected] = newPhotos.splice(index, 1);
-    newPhotos.unshift(selected);
-    setPhotos(newPhotos);
+    setPhotos((prev) => {
+      const next = [...prev];
+      const [selected] = next.splice(index, 1);
+      next.unshift(selected!);
+      return next;
+    });
     toast.success("Primary photo updated");
   };
 
@@ -2633,42 +2672,89 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           </CardContent>
         </Card>
 
-        {/* Section 6: Photos (Only for Creation in this pass) */}
-        {!isEdit && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                6. Photos
-                {section6Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div
-                className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-12 text-center hover:border-primary/50 transition-colors cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  className="hidden"
-                  ref={fileInputRef}
-                  onChange={handlePhotoChange}
-                />
-                <div className="flex flex-col items-center gap-2">
-                  <Upload className="h-10 w-10 text-muted-foreground" />
-                  <p className="text-sm font-medium">Click or drag photos to upload</p>
-                  <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 10MB each.</p>
+        {/* Section 6: Vehicle photos (create + edit; draft-from-intake lands on edit — this must stay visible) */}
+        <Card className="border-2 border-primary/20 shadow-sm ring-1 ring-primary/10">
+          <CardHeader className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              6. Vehicle Photos
+              {section6Complete ? <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Upload photos for this vehicle. Images are optimized automatically (thumbnail, card, and gallery sizes).
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              className="border-2 border-dashed border-primary/30 bg-muted/30 rounded-lg p-10 text-center hover:border-primary/60 hover:bg-muted/50 transition-colors cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handlePhotoDrop}
+            >
+              <Input
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handlePhotoChange}
+              />
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="h-10 w-10 text-primary/80" />
+                <p className="text-sm font-semibold text-foreground">Add photos</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  Click here or drag files into this area. JPEG, PNG, or WebP.
+                </p>
+              </div>
+            </div>
+
+            {existingSavedMedia.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">Saved photos</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {existingSavedMedia.map((m, i) => (
+                    <div
+                      key={m.id}
+                      className="relative aspect-square rounded-md overflow-hidden border bg-muted shadow-sm"
+                    >
+                      <img
+                        src={vehicleMediaAdminThumbUrl(m)}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      {i === 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-primary-foreground text-[10px] font-bold py-1 text-center flex items-center justify-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Primary
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
 
-              {photos.length > 0 && (
+            {photos.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  {isEdit ? "New photos (will upload when you save)" : "Selected photos"}
+                </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                   {photos.map((photo, index) => (
-                    <div key={index} className="relative group aspect-square rounded-md overflow-hidden border shadow-sm">
+                    <div
+                      key={`${photo.name}-${photo.size}-${index}`}
+                      className="relative group aspect-square rounded-md overflow-hidden border shadow-sm"
+                    >
                       <img
-                        src={URL.createObjectURL(photo)}
-                        alt={`Preview ${index}`}
+                        src={newPhotoPreviewUrls[index]}
+                        alt=""
                         className="h-full w-full object-cover"
                       />
                       <div className="absolute top-1 right-1 flex gap-1">
@@ -2678,7 +2764,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                             variant="secondary"
                             size="icon"
                             className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => setPrimaryPhoto(index)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPrimaryPhoto(index);
+                            }}
                             title="Set as Primary"
                           >
                             <Star className="h-3 w-3" />
@@ -2689,7 +2778,10 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                           variant="destructive"
                           size="icon"
                           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removePhoto(index)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePhoto(index);
+                          }}
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -2697,22 +2789,27 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {index === 0 && (
                         <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-primary-foreground text-[10px] font-bold py-1 text-center flex items-center justify-center gap-1">
                           <CheckCircle2 className="h-3 w-3" />
-                          Primary Image
+                          Primary (new)
                         </div>
                       )}
                     </div>
                   ))}
                 </div>
-              )}
-              <FormDescription>At least 1 photo is required to publish.</FormDescription>
-            </CardContent>
-          </Card>
-        )}
+              </div>
+            )}
+
+            <FormDescription>
+              {!isEdit
+                ? "At least one photo is required before you can publish to the showroom. Drafts may be saved without photos."
+                : "Add more listing photos anytime; they use the same optimization as new vehicles. Saving uploads any new images above."}
+            </FormDescription>
+          </CardContent>
+        </Card>
 
         {/* Section 7: Internal Notes */}
         <Card>
           <CardHeader>
-            <CardTitle>{isEdit ? "6. Internal Notes" : "7. Internal Notes"}</CardTitle>
+            <CardTitle>7. Internal Notes</CardTitle>
           </CardHeader>
           <CardContent>
             <FormField

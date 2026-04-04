@@ -4,6 +4,7 @@
  */
 
 import type { VehicleWithMedia } from "@/types";
+import { vehicleMediaGalleryUrl } from "@/lib/vehicle-media-display";
 
 function stringifyPrice(value: unknown): string {
   if (value == null) return "0";
@@ -58,7 +59,10 @@ export interface PublicVehicleDetailDto {
 export function toPublicVehicleDetailDto(vehicle: VehicleWithMedia): PublicVehicleDetailDto {
   const mediaUrls = (vehicle.media ?? [])
     .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
-    .map((m) => (m?.url && typeof m.url === "string" ? m.url : ""))
+    .map((m) => {
+      if (!m || typeof m.url !== "string") return "";
+      return vehicleMediaGalleryUrl(m);
+    })
     .filter(Boolean);
   const firstUrl = mediaUrls[0] ?? null;
 

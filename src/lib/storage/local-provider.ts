@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
-import { StorageProvider, SaveFileOptions } from "./provider";
+import { StorageProvider, SaveFileOptions, SaveBufferOptions } from "./provider";
 
 /**
  * Default local storage paths.
@@ -37,13 +37,28 @@ export class LocalStorageProvider implements StorageProvider {
     return filename;
   }
 
+  async saveBuffer(buffer: Buffer, options: SaveBufferOptions): Promise<string> {
+    const storageDir = options.isPublic ? PUBLIC_STORAGE_DIR : PRIVATE_STORAGE_DIR;
+    const filename = options.filename;
+    const filePath = path.join(storageDir, filename);
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, buffer);
+
+    return filename;
+  }
+
   async getReadStream(key: string): Promise<Readable> {
-    // Note: private files are the primary use case for getReadStream
-    const filePath = path.join(PRIVATE_STORAGE_DIR, key);
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${key}`);
+    // Public inventory (vehicle photos) live under PUBLIC_STORAGE_DIR; private docs under PRIVATE.
+    const publicPath = path.join(PUBLIC_STORAGE_DIR, key);
+    if (fs.existsSync(publicPath)) {
+      return fs.createReadStream(publicPath);
     }
-    return fs.createReadStream(filePath);
+    const privatePath = path.join(PRIVATE_STORAGE_DIR, key);
+    if (fs.existsSync(privatePath)) {
+      return fs.createReadStream(privatePath);
+    }
+    throw new Error(`File not found: ${key}`);
   }
 
   getPublicUrl(key: string): string {

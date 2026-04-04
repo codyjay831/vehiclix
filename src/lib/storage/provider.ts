@@ -5,6 +5,13 @@ export interface SaveFileOptions {
   isPublic?: boolean;
 }
 
+export interface SaveBufferOptions {
+  /** Relative key including subpaths, e.g. `{vehicleId}/{mediaId}/thumb.jpg`. */
+  filename: string;
+  contentType?: string;
+  isPublic?: boolean;
+}
+
 export interface StorageProvider {
   /**
    * Saves a file to the storage system.
@@ -13,6 +20,11 @@ export interface StorageProvider {
    * @returns The relative storage key/filename.
    */
   save(file: File, options?: SaveFileOptions): Promise<string>;
+
+  /**
+   * Saves raw bytes (e.g. processed images). Same key semantics as {@link save}.
+   */
+  saveBuffer(buffer: Buffer, options: SaveBufferOptions): Promise<string>;
 
   /**
    * Returns a read stream for a given storage key.

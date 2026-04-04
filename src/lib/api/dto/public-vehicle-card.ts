@@ -4,6 +4,7 @@
  */
 
 import type { VehicleWithMedia } from "@/types";
+import { vehicleMediaCardUrl } from "@/lib/vehicle-media-display";
 
 function stringifyPrice(value: unknown): string {
   if (value == null) return "0";
@@ -38,7 +39,8 @@ export interface PublicVehicleCardDto {
  */
 export function toPublicVehicleCardDto(vehicle: VehicleWithMedia): PublicVehicleCardDto {
   const firstMedia = vehicle.media?.[0];
-  const heroUrl = firstMedia?.url && typeof firstMedia.url === "string" ? firstMedia.url : null;
+  const heroUrl =
+    firstMedia && typeof firstMedia.url === "string" ? vehicleMediaCardUrl(firstMedia) : null;
 
   return {
     id: vehicle.id,

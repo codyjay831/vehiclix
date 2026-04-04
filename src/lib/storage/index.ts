@@ -1,5 +1,5 @@
 import { Readable } from "stream";
-import { StorageProvider } from "./provider";
+import { StorageProvider, type SaveBufferOptions } from "./provider";
 import { LocalStorageProvider } from "./local-provider";
 import { GCSStorageProvider } from "./gcs-provider";
 
@@ -47,6 +47,13 @@ export function getStorageProvider(): StorageProvider {
 export async function saveFile(file: File, options?: { isPublic?: boolean }): Promise<string> {
   const provider = getStorageProvider();
   return provider.save(file, options ?? { isPublic: false });
+}
+
+/**
+ * Persists processed bytes (e.g. vehicle image variants). Same key semantics as {@link saveFile}.
+ */
+export async function saveBuffer(buffer: Buffer, options: SaveBufferOptions): Promise<string> {
+  return getStorageProvider().saveBuffer(buffer, options);
 }
 
 /**

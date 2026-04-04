@@ -1,8 +1,10 @@
 import { db } from "./db";
 import { DealStatus } from "@prisma/client";
 import { getAuthenticatedUser } from "./auth";
+import { enrichVehicleMedia } from "@/lib/inventory";
 import {
   portalActiveDealVehicleSelect,
+  type PortalActiveDealVehicle,
   vehicleNestedAdminContextSelect,
 } from "@/lib/prisma/vehicle-safe-select";
 
@@ -24,7 +26,7 @@ export async function getActiveDeal(userId: string, organizationId?: string | nu
     throw new Error("Organization context required for portal access");
   }
 
-  return db.deal.findFirst({
+  const deal = await db.deal.findFirst({
     where: {
       userId,
       organizationId,
@@ -43,6 +45,13 @@ export async function getActiveDeal(userId: string, organizationId?: string | nu
       createdAt: "desc",
     },
   });
+
+  if (!deal?.vehicle) return deal;
+
+  return {
+    ...deal,
+    vehicle: enrichVehicleMedia(deal.vehicle) as PortalActiveDealVehicle,
+  };
 }
 
 /**

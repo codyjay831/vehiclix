@@ -5,11 +5,13 @@
 // Do not hardcode actorRole
 // Use requireUserWithOrg()
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { VehicleStatus, Prisma, Role, MediaType } from "@prisma/client";
-import { getStorageProvider } from "@/lib/storage";
+import { deleteFile, saveBuffer } from "@/lib/storage";
+import { generateVehicleImageVariants } from "@/lib/images/vehicle-image-pipeline";
 
 import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
@@ -46,9 +48,85 @@ export async function isVinUnique(vin: string, excludeId?: string): Promise<bool
   return false;
 }
 
+type VehicleMediaCreateRow = {
+  id: string;
+  mediaType: typeof MediaType.IMAGE;
+  url: string;
+  thumbUrl: string;
+  cardUrl: string;
+  galleryUrl: string;
+  displayOrder: number;
+};
+
+/**
+ * Runs Sharp variant pipeline + storage upload for vehicle listing images.
+ * On failure after partial upload, deletes keys accumulated so far.
+ */
+async function buildVehicleMediaRowsFromImageFiles(
+  vehicleId: string,
+  files: File[],
+  startDisplayOrder: number
+): Promise<{ mediaRecords: VehicleMediaCreateRow[]; uploadedStorageKeys: string[] }> {
+  const uploadedStorageKeys: string[] = [];
+  const mediaRecords: VehicleMediaCreateRow[] = [];
+
+  const cleanupUploadedKeys = async () => {
+    await Promise.all(uploadedStorageKeys.map((key) => deleteFile(key).catch(() => undefined)));
+  };
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      if (file.type && !file.type.startsWith("image/")) {
+        throw new Error("Only image files are supported for vehicle photos.");
+      }
+      const raw = Buffer.from(await file.arrayBuffer());
+      const variants = await generateVehicleImageVariants(raw);
+      const mediaId = randomUUID();
+      const base = `${vehicleId}/${mediaId}`;
+
+      const thumbKey = await saveBuffer(variants.thumb, {
+        filename: `${base}/thumb.jpg`,
+        contentType: "image/jpeg",
+        isPublic: true,
+      });
+      uploadedStorageKeys.push(thumbKey);
+
+      const cardKey = await saveBuffer(variants.card, {
+        filename: `${base}/card.jpg`,
+        contentType: "image/jpeg",
+        isPublic: true,
+      });
+      uploadedStorageKeys.push(cardKey);
+
+      const galleryKey = await saveBuffer(variants.gallery, {
+        filename: `${base}/gallery.jpg`,
+        contentType: "image/jpeg",
+        isPublic: true,
+      });
+      uploadedStorageKeys.push(galleryKey);
+
+      mediaRecords.push({
+        id: mediaId,
+        mediaType: MediaType.IMAGE,
+        url: galleryKey,
+        thumbUrl: thumbKey,
+        cardUrl: cardKey,
+        galleryUrl: galleryKey,
+        displayOrder: startDisplayOrder + i,
+      });
+    } catch (err) {
+      await cleanupUploadedKeys();
+      throw err;
+    }
+  }
+
+  return { mediaRecords, uploadedStorageKeys };
+}
+
 /**
  * Action to update an existing vehicle's fields.
- * Media management is excluded from this pass.
+ * New listing photos are appended via the same Sharp pipeline as create.
  */
 export async function updateVehicleAction(vehicleId: string, formData: FormData) {
   await requireWriteAccess();
@@ -129,50 +207,88 @@ export async function updateVehicleAction(vehicleId: string, formData: FormData)
     throw new Error("A vehicle with this VIN already exists");
   }
 
-  await db.$transaction(async (tx) => {
-    const updatedVehicle = await tx.vehicle.update({
-      where: { id: vehicleId },
-      data: {
-        vin,
-        year,
-        make,
-        model,
-        trim,
-        bodyStyle,
-        fuelType,
-        transmission,
-        doors,
-        mileage,
-        drivetrain,
-        batteryRangeEstimate: batteryRange,
-        batteryCapacityKWh,
-        batteryChemistry,
-        chargingStandard,
-        exteriorColor,
-        interiorColor,
-        condition,
-        titleStatus,
-        price,
-        description,
-        highlights,
-        features,
-        internalNotes,
-      },
-      select: { id: true },
-    });
+  const photoFiles = formData.getAll("photos").filter((f): f is File => f instanceof File);
+  let appendedMedia: VehicleMediaCreateRow[] = [];
+  let appendedUploadKeys: string[] = [];
 
-    await logAuditEvent({
-      eventType: "vehicle.updated",
-      entityType: "Vehicle",
-      entityId: vehicleId,
-      organizationId: user.organizationId,
-      actorId: user.id,
-      actorRole: user.role,
-      metadata: { changedFields: Array.from(formData.keys()) },
+  if (photoFiles.length > 0) {
+    const maxRow = await db.vehicleMedia.aggregate({
+      where: { vehicleId },
+      _max: { displayOrder: true },
     });
+    const startOrder = (maxRow._max.displayOrder ?? -1) + 1;
+    const built = await buildVehicleMediaRowsFromImageFiles(vehicleId, photoFiles, startOrder);
+    appendedMedia = built.mediaRecords;
+    appendedUploadKeys = built.uploadedStorageKeys;
+  }
 
-    return updatedVehicle;
-  });
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.vehicle.update({
+        where: { id: vehicleId },
+        data: {
+          vin,
+          year,
+          make,
+          model,
+          trim,
+          bodyStyle,
+          fuelType,
+          transmission,
+          doors,
+          mileage,
+          drivetrain,
+          batteryRangeEstimate: batteryRange,
+          batteryCapacityKWh,
+          batteryChemistry,
+          chargingStandard,
+          exteriorColor,
+          interiorColor,
+          condition,
+          titleStatus,
+          price,
+          description,
+          highlights,
+          features,
+          internalNotes,
+        },
+        select: { id: true },
+      });
+
+      if (appendedMedia.length > 0) {
+        await tx.vehicleMedia.createMany({
+          data: appendedMedia.map((r) => ({
+            id: r.id,
+            vehicleId,
+            mediaType: r.mediaType,
+            url: r.url,
+            thumbUrl: r.thumbUrl,
+            cardUrl: r.cardUrl,
+            galleryUrl: r.galleryUrl,
+            displayOrder: r.displayOrder,
+          })),
+        });
+      }
+
+      await logAuditEvent({
+        eventType: "vehicle.updated",
+        entityType: "Vehicle",
+        entityId: vehicleId,
+        organizationId: user.organizationId,
+        actorId: user.id,
+        actorRole: user.role,
+        metadata: {
+          changedFields: Array.from(formData.keys()),
+          photosAppended: appendedMedia.length,
+        },
+      });
+    });
+  } catch (err) {
+    if (appendedUploadKeys.length > 0) {
+      await Promise.all(appendedUploadKeys.map((key) => deleteFile(key).catch(() => undefined)));
+    }
+    throw err;
+  }
 
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${vehicleId}/edit`);
@@ -257,7 +373,7 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
 
 /**
  * Action to create a new vehicle.
- * Handles photo uploads to local storage and database persistence.
+ * Photo uploads run through the Sharp pipeline (thumb / card / gallery JPEGs) and persist variant keys.
  */
 export async function createVehicleAction(formData: FormData) {
   await requireWriteAccess();
@@ -320,92 +436,93 @@ export async function createVehicleAction(formData: FormData) {
   // 6. Internal
   const internalNotes = (formData.get("internalNotes") as string) || null;
 
-  // Media
+  // Media: Sharp pipeline runs before the DB transaction (I/O + CPU outside transaction).
+  // Keys uploaded here are best-effort deleted if the transaction fails (orphan mitigation).
   const photos = formData.getAll("photos") as File[];
-  const storage = getStorageProvider();
-  
-  const mediaRecords = await Promise.all(
-    photos.map(async (file, index) => {
-      const key = await storage.save(file, { isPublic: true });
-      return {
-        mediaType: MediaType.IMAGE,
-        url: key,
-        displayOrder: index,
-      };
-    })
+  const vehicleId = randomUUID();
+  const { mediaRecords, uploadedStorageKeys } = await buildVehicleMediaRowsFromImageFiles(
+    vehicleId,
+    photos,
+    0
   );
+
+  const cleanupUploadedKeys = async () => {
+    await Promise.all(uploadedStorageKeys.map((key) => deleteFile(key).catch(() => undefined)));
+  };
 
   const isPublishing = status === "LISTED";
 
-  // Database Transaction
-  await db.$transaction(
-    async (tx) => {
-      const vehicle = await tx.vehicle.create({
-        data: {
-          vin,
-          year,
-          make,
-          model,
-          trim,
-          bodyStyle,
-          fuelType,
-          transmission,
-          doors,
-          mileage,
-          drivetrain,
-          batteryRangeEstimate: batteryRange,
-          batteryCapacityKWh,
-          batteryChemistry,
-          chargingStandard,
-          exteriorColor,
-          interiorColor,
-          condition,
-          titleStatus,
-          price,
-          description,
-          highlights,
-          features,
-          internalNotes,
-          vehicleStatus: status,
-          organizationId: user.organizationId!,
-          media: {
-            createMany: {
-              data: mediaRecords,
+  try {
+    await db.$transaction(
+      async (tx) => {
+        const vehicle = await tx.vehicle.create({
+          data: {
+            id: vehicleId,
+            vin,
+            year,
+            make,
+            model,
+            trim,
+            bodyStyle,
+            fuelType,
+            transmission,
+            doors,
+            mileage,
+            drivetrain,
+            batteryRangeEstimate: batteryRange,
+            batteryCapacityKWh,
+            batteryChemistry,
+            chargingStandard,
+            exteriorColor,
+            interiorColor,
+            condition,
+            titleStatus,
+            price,
+            description,
+            highlights,
+            features,
+            internalNotes,
+            vehicleStatus: status,
+            organizationId: user.organizationId!,
+            media: {
+              create: mediaRecords,
             },
           },
-        },
-      });
+        });
 
-      const slug = await generateUniqueVehicleSlug(tx, user.organizationId!, {
-        id: vehicle.id,
-        year: vehicle.year,
-        make: vehicle.make,
-        model: vehicle.model,
-        trim: vehicle.trim,
-      });
-      await tx.vehicle.update({
-        where: { id: vehicle.id },
-        data: { slug },
-        select: { id: true },
-      });
+        const slug = await generateUniqueVehicleSlug(tx, user.organizationId!, {
+          id: vehicle.id,
+          year: vehicle.year,
+          make: vehicle.make,
+          model: vehicle.model,
+          trim: vehicle.trim,
+        });
+        await tx.vehicle.update({
+          where: { id: vehicle.id },
+          data: { slug },
+          select: { id: true },
+        });
 
-      // Create audit event
-      await tx.activityEvent.create({
-        data: {
-          eventType: isPublishing ? "vehicle.published" : "vehicle.created",
-          entityType: "Vehicle",
-          entityId: vehicle.id,
-          organizationId: user.organizationId!,
-          actorId: user.id,
-          actorRole: user.role,
-          metadata: { status: vehicle.vehicleStatus },
-        },
-      });
-    },
-    {
-      timeout: 20000, // 20s for interactive transaction (default is 5s)
-    }
-  );
+        await tx.activityEvent.create({
+          data: {
+            eventType: isPublishing ? "vehicle.published" : "vehicle.created",
+            entityType: "Vehicle",
+            entityId: vehicle.id,
+            organizationId: user.organizationId!,
+            actorId: user.id,
+            actorRole: user.role,
+            metadata: { status: vehicle.vehicleStatus },
+          },
+        });
+      },
+      {
+        timeout: 20000,
+      }
+    );
+  } catch (err) {
+    await cleanupUploadedKeys();
+    throw err;
+  }
 
   revalidatePath("/admin/inventory");
 

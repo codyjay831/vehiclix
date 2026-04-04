@@ -147,6 +147,9 @@ export function mapPublicVehicleDetailDtoForStorefrontVdp(dto: PublicVehicleDeta
     vehicleId: dto.id,
     mediaType: MediaType.IMAGE,
     url: imageUrl,
+    thumbUrl: null,
+    cardUrl: null,
+    galleryUrl: null,
     displayOrder: i,
     createdAt: new Date(0),
   }));

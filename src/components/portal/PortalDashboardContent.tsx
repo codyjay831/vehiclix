@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CarFront, FileText, LayoutDashboard, History, Search, HistoryIcon } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
+import { vehicleMediaCardUrl } from "@/lib/vehicle-media-display";
 
 type ActiveDealWithContext = Omit<Deal, "vehicle"> & { vehicle: PortalActiveDealVehicle };
 
@@ -44,7 +45,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                 <div className="w-full md:w-48 h-32 rounded-2xl overflow-hidden bg-primary/5 ring-1 ring-primary/5 flex-shrink-0">
                   {activeDeal.vehicle.media[0] ? (
                     <img
-                      src={activeDeal.vehicle.media[0].url}
+                      src={vehicleMediaCardUrl(activeDeal.vehicle.media[0])}
                       alt={`${activeDeal.vehicle.year} ${activeDeal.vehicle.make}`}
                       className="w-full h-full object-cover"
                     />

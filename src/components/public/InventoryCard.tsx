@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { useTenant } from "@/components/providers/TenantProvider";
+import { vehicleMediaCardUrl } from "@/lib/vehicle-media-display";
 
 interface InventoryCardProps {
   vehicle: SerializedVehicleWithMedia;
@@ -13,7 +14,8 @@ interface InventoryCardProps {
 
 export function InventoryCard({ vehicle }: InventoryCardProps) {
   const tenant = useTenant();
-  const primaryImage = vehicle.media[0]?.url;
+  const first = vehicle.media[0];
+  const primaryImage = first ? vehicleMediaCardUrl(first) : undefined;
 
   return (
     <Card className="overflow-hidden border-0 shadow-none bg-background group">

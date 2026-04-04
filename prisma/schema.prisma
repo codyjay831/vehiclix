@@ -190,7 +190,14 @@ model VehicleMedia {
   id           String    @id @default(uuid())
   vehicleId    String
   mediaType    MediaType
+  /** Legacy canonical key / URL; new uploads mirror gallery. */
   url          String
+  /** Optimized thumbnail (~400px); nullable for legacy rows. */
+  thumbUrl     String?
+  /** Card / list size (~800px); nullable for legacy rows. */
+  cardUrl      String?
+  /** Main VDP / gallery size (~1920px); nullable for legacy rows. */
+  galleryUrl   String?
   displayOrder Int
   createdAt    DateTime  @default(now())
   vehicle      Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)

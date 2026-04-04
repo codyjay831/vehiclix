@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn } from "lucide-react";
 import { VehicleMedia } from "@/types";
+import { vehicleMediaGalleryUrl, vehicleMediaStripThumbUrl } from "@/lib/vehicle-media-display";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 
@@ -22,7 +23,9 @@ export function MediaGallery({ media }: MediaGalleryProps) {
     );
   }
 
-  const activeImage = media[activeIndex];
+  const activeItem = media[activeIndex];
+  const activeHeroUrl = activeItem ? vehicleMediaGalleryUrl(activeItem) : "";
+  const showHero = Boolean(activeHeroUrl.trim());
 
   const nextImage = () => {
     setActiveIndex((prev) => (prev + 1) % media.length);
@@ -38,19 +41,29 @@ export function MediaGallery({ media }: MediaGalleryProps) {
       <div className="relative aspect-[3/2] overflow-hidden rounded-2xl bg-muted group cursor-zoom-in">
         <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
           <DialogTrigger asChild>
-            <img
-              src={activeImage.url}
-              alt="Vehicle Hero"
-              className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
-            />
+            {showHero ? (
+              <img
+                src={activeHeroUrl}
+                alt="Vehicle Hero"
+                className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+              />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-muted-foreground text-sm">
+                Image unavailable
+              </div>
+            )}
           </DialogTrigger>
           <DialogContent className="max-w-7xl border-none bg-transparent p-0 shadow-none">
             <div className="relative flex items-center justify-center h-[90vh] w-full">
-              <img
-                src={activeImage.url}
-                alt="Full View"
-                className="max-h-full max-w-full object-contain rounded-lg"
-              />
+              {showHero ? (
+                <img
+                  src={activeHeroUrl}
+                  alt="Full View"
+                  className="max-h-full max-w-full object-contain rounded-lg"
+                />
+              ) : (
+                <p className="text-muted-foreground">Image unavailable</p>
+              )}
               
               {/* Lightbox Controls */}
               <button
@@ -104,7 +117,11 @@ export function MediaGallery({ media }: MediaGalleryProps) {
                 activeIndex === index ? "border-primary opacity-100 ring-2 ring-primary/20" : "border-transparent opacity-60 hover:opacity-100"
               )}
             >
-              <img src={item.url} alt={`Thumbnail ${index + 1}`} className="h-full w-full object-cover" />
+              <img
+                src={vehicleMediaStripThumbUrl(item)}
+                alt={`Thumbnail ${index + 1}`}
+                className="h-full w-full object-cover"
+              />
             </button>
           ))}
         </div>

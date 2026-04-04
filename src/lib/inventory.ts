@@ -2,6 +2,13 @@ import { db } from "./db";
 import type { VehicleWithMedia } from "@/lib/prisma/vehicle-safe-select";
 import { Prisma, VehicleStatus } from "@prisma/client";
 import { getPublicUrl } from "@/lib/storage";
+
+function enrichMediaKey(key: string | null | undefined): string | null {
+  if (key == null) return null;
+  const t = String(key).trim();
+  if (!t) return null;
+  return getPublicUrl(t);
+}
 import {
   buildVehicleInventorySelect,
   vehicleForEditSelect,
@@ -15,15 +22,25 @@ import {
  * - Legacy paths (/uploads/inventory/..., uploads/inventory/...): normalized to key then resolved.
  * - Bare key: resolved via active provider.
  */
-function enrichVehicleMedia<T>(vehicle: T | null): T | null {
+export function enrichVehicleMedia<T>(vehicle: T | null): T | null {
   if (!vehicle || typeof vehicle !== "object" || !("media" in vehicle)) return vehicle;
-  const v = vehicle as { media?: { url: string }[] | null };
+  const v = vehicle as {
+    media?: {
+      url: string;
+      thumbUrl?: string | null;
+      cardUrl?: string | null;
+      galleryUrl?: string | null;
+    }[] | null;
+  };
   if (!v.media?.length) return vehicle;
   return {
     ...vehicle,
     media: v.media.map((m) => ({
       ...m,
-      url: getPublicUrl(m.url),
+      url: getPublicUrl(String(m.url).trim()),
+      thumbUrl: enrichMediaKey(m.thumbUrl),
+      cardUrl: enrichMediaKey(m.cardUrl),
+      galleryUrl: enrichMediaKey(m.galleryUrl),
     })),
   } as T;
 }
@@ -48,10 +65,11 @@ export async function getAdminInventory(organizationId: string): Promise<Vehicle
  * Fetches a single vehicle for admin editing.
  */
 export async function getVehicleForEdit(organizationId: string, id: string) {
-  return db.vehicle.findFirst({
+  const vehicle = await db.vehicle.findFirst({
     where: { id, organizationId },
     select: vehicleForEditSelect,
   });
+  return enrichVehicleMedia(vehicle);
 }
 
 /**

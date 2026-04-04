@@ -47,6 +47,9 @@ export const vehicleMediaSelect = {
   vehicleId: true,
   mediaType: true,
   url: true,
+  thumbUrl: true,
+  cardUrl: true,
+  galleryUrl: true,
   displayOrder: true,
   createdAt: true,
 } satisfies Prisma.VehicleMediaSelect;
@@ -104,8 +107,14 @@ export type VehicleWithMedia = Prisma.VehicleGetPayload<{
 
 export const vehicleWithMediaInventoryListSelect = buildVehicleInventorySelect(1);
 
-/** Vehicle edit preload: safe scalars only (no relations). */
-export const vehicleForEditSelect = vehicleSafeScalarSelect;
+/** Vehicle edit preload: safe scalars + ordered media for the admin form. */
+export const vehicleForEditSelect = {
+  ...vehicleSafeScalarSelect,
+  media: {
+    orderBy: { displayOrder: "asc" as const },
+    select: vehicleMediaSelect,
+  },
+} satisfies Prisma.VehicleSelect;
 
 /** Portal active deal: safe scalars + primary image. */
 export const portalActiveDealVehicleSelect = {

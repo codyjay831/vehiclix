@@ -22,8 +22,8 @@ export function computeIntakeStillNeededLabels(params: {
   interiorColor: string;
   price: number | "";
   decodeFailed: boolean;
-  isEdit: boolean;
-  photosCount: number;
+  /** Existing saved images + newly selected files (create or edit). */
+  totalPhotoCount: number;
   aiAutoAppliedIdentityKeys?: string[];
 }): string[] {
   const out: string[] = [];
@@ -58,7 +58,7 @@ export function computeIntakeStillNeededLabels(params: {
   if (priceUnset) {
     out.push("Listing price (manual)");
   }
-  if (!params.isEdit && params.photosCount < 1) {
+  if (params.totalPhotoCount < 1) {
     out.push("At least one photo");
   }
   return out;
