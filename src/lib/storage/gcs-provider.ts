@@ -59,36 +59,14 @@ export class GCSStorageProvider implements StorageProvider {
     const prefix = options.isPublic ? "inventory/" : "documents/";
     const storageKey = `${prefix}${filename}`;
 
-    // #region agent log
-    console.info(JSON.stringify({tag:"DBG:d1f470",h:"H2,H4,H5",loc:"gcs-provider.ts:saveBuffer:pre",storageKey,bufLen:buffer.length,bucket:this.bucketName,ts:Date.now()}));
-    fetch('http://127.0.0.1:7253/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d1f470'},body:JSON.stringify({sessionId:'d1f470',location:'gcs-provider.ts:saveBuffer:pre',message:'before gcsFile.save',data:{storageKey,bufLen:buffer.length,bucket:this.bucketName},timestamp:Date.now(),hypothesisId:'H2,H4,H5'})}).catch(()=>{});
-    // #endregion
-
     const gcsFile = bucket.file(storageKey);
-    try {
-      await gcsFile.save(buffer, {
-        resumable: false,
-        contentType: options.contentType ?? "application/octet-stream",
-        metadata: {
-          cacheControl: "public, max-age=31536000",
-        },
-      });
-      // #region agent log
-      console.info(JSON.stringify({tag:"DBG:d1f470",h:"H2,H3",loc:"gcs-provider.ts:saveBuffer:ok",storageKey,ts:Date.now()}));
-      fetch('http://127.0.0.1:7253/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d1f470'},body:JSON.stringify({sessionId:'d1f470',location:'gcs-provider.ts:saveBuffer:ok',message:'gcsFile.save succeeded',data:{storageKey},timestamp:Date.now(),hypothesisId:'H2,H3'})}).catch(()=>{});
-      // #endregion
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const errStack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
-      const errName = err instanceof Error ? err.name : undefined;
-      const errCode = (err as any)?.code;
-      const errStatus = (err as any)?.response?.status ?? (err as any)?.status;
-      // #region agent log
-      console.info(JSON.stringify({tag:"DBG:d1f470",h:"H2,H3,H4",loc:"gcs-provider.ts:saveBuffer:err",storageKey,errMsg,errName,errCode,errStatus,errStack,ts:Date.now()}));
-      fetch('http://127.0.0.1:7253/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d1f470'},body:JSON.stringify({sessionId:'d1f470',location:'gcs-provider.ts:saveBuffer:err',message:'gcsFile.save FAILED',data:{storageKey,errMsg,errName,errCode,errStatus,errStack},timestamp:Date.now(),hypothesisId:'H2,H3,H4'})}).catch(()=>{});
-      // #endregion
-      throw err;
-    }
+    await gcsFile.save(buffer, {
+      resumable: false,
+      contentType: options.contentType ?? "application/octet-stream",
+      metadata: {
+        cacheControl: "public, max-age=31536000",
+      },
+    });
 
     return filename;
   }

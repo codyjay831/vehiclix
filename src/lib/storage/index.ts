@@ -28,15 +28,7 @@ function buildWifAuthClient() {
     service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${saEmail}:generateAccessToken`,
     subject_token_supplier: {
       getSubjectToken: async () => {
-        // #region agent log
-        const preTs = Date.now();
-        // #endregion
-        const token = await getVercelOidcToken();
-        // #region agent log
-        console.info(JSON.stringify({tag:"DBG:d1f470",h:"H1",loc:"index.ts:getSubjectToken",hasToken:!!token,tokenLen:token?.length??0,source:"@vercel/oidc",elapsedMs:Date.now()-preTs,ts:Date.now()}));
-        fetch('http://127.0.0.1:7253/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d1f470'},body:JSON.stringify({sessionId:'d1f470',location:'index.ts:getSubjectToken',message:'OIDC token via @vercel/oidc',data:{hasToken:!!token,tokenLen:token?.length??0,source:'@vercel/oidc',elapsedMs:Date.now()-preTs},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        return token;
+        return await getVercelOidcToken();
       },
     },
   });
@@ -70,10 +62,6 @@ export function getStorageProvider(): StorageProvider {
 
     // Prefer WIF (keyless); fall back to JSON key for non-Vercel environments.
     const authClient = buildWifAuthClient();
-    // #region agent log
-    console.info(JSON.stringify({tag:"DBG:d1f470",h:"H2",loc:"index.ts:getStorageProvider",wifClientCreated:!!authClient,hasPoolId:!!process.env.GCP_WORKLOAD_IDENTITY_POOL_ID,hasProviderId:!!process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID,hasProjectNumber:!!process.env.GCP_PROJECT_NUMBER,hasSaEmail:!!process.env.GCP_SERVICE_ACCOUNT_EMAIL,hasOidcToken:!!process.env.VERCEL_OIDC_TOKEN,ts:Date.now()}));
-    fetch('http://127.0.0.1:7253/ingest/329925ab-9b1c-4864-8917-f8b91cf631b6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d1f470'},body:JSON.stringify({sessionId:'d1f470',location:'index.ts:getStorageProvider',message:'WIF client init check',data:{wifClientCreated:!!authClient,hasPoolId:!!process.env.GCP_WORKLOAD_IDENTITY_POOL_ID,hasProviderId:!!process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID,hasProjectNumber:!!process.env.GCP_PROJECT_NUMBER,hasSaEmail:!!process.env.GCP_SERVICE_ACCOUNT_EMAIL,hasOidcToken:!!process.env.VERCEL_OIDC_TOKEN},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
 
     let credentials;
     if (!authClient) {
