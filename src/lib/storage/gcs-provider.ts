@@ -1,4 +1,5 @@
 import { Storage } from "@google-cloud/storage";
+import type { AuthClient } from "google-auth-library";
 import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 import { StorageProvider, SaveFileOptions, SaveBufferOptions } from "./provider";
@@ -7,7 +8,10 @@ import path from "path";
 export interface GCSStorageProviderOptions {
   bucketName: string;
   projectId?: string;
+  /** Legacy: parsed service account JSON key. */
   credentials?: any;
+  /** Federated auth client (WIF on Vercel). Takes precedence over credentials. */
+  authClient?: AuthClient;
 }
 
 export class GCSStorageProvider implements StorageProvider {
@@ -17,7 +21,9 @@ export class GCSStorageProvider implements StorageProvider {
   constructor(options: GCSStorageProviderOptions) {
     this.storage = new Storage({
       projectId: options.projectId,
-      credentials: options.credentials,
+      ...(options.authClient
+        ? { authClient: options.authClient }
+        : { credentials: options.credentials }),
     });
     this.bucketName = options.bucketName;
   }
@@ -43,9 +49,6 @@ export class GCSStorageProvider implements StorageProvider {
         cacheControl: "public, max-age=31536000",
       },
     });
-    if (options.isPublic) {
-      await this.tryMakeInventoryObjectPublic(gcsFile, storageKey);
-    }
 
     return filename;
   }
@@ -64,35 +67,8 @@ export class GCSStorageProvider implements StorageProvider {
         cacheControl: "public, max-age=31536000",
       },
     });
-    if (options.isPublic) {
-      await this.tryMakeInventoryObjectPublic(gcsFile, storageKey);
-    }
 
     return filename;
-  }
-
-  /**
-   * Listing images use {@link getPublicUrl} (anonymous HTTPS). Default GCS uploads are private;
-   * without public read, browsers get 403 on the public URL.
-   * Skips safely when the bucket uses uniform bucket-level access (set bucket IAM instead).
-   */
-  private async tryMakeInventoryObjectPublic(
-    gcsFile: ReturnType<ReturnType<Storage["bucket"]>["file"]>,
-    storageKey: string
-  ): Promise<void> {
-    try {
-      await gcsFile.makePublic();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        JSON.stringify({
-          tag: "storage.gcs.makePublicSkipped",
-          storageKey,
-          hint: "If images 403, add public/objectViewer on this prefix or disable uniform bucket-level access for object ACLs.",
-          message,
-        })
-      );
-    }
   }
 
   async getReadStream(key: string): Promise<Readable> {
@@ -111,8 +87,8 @@ export class GCSStorageProvider implements StorageProvider {
   }
 
   getPublicUrl(key: string): string {
-    // Return standard GCS public URL for the inventory prefix
-    return `https://storage.googleapis.com/${this.bucketName}/inventory/${key}`;
+    // Proxy through the app so the bucket stays private (no public object access needed).
+    return `/api/media/${key}`;
   }
 
   async delete(key: string): Promise<void> {

@@ -1,9 +1,55 @@
 import { Readable } from "stream";
+import { ExternalAccountClient } from "google-auth-library";
 import { StorageProvider, type SaveBufferOptions } from "./provider";
 import { LocalStorageProvider } from "./local-provider";
 import { GCSStorageProvider } from "./gcs-provider";
 
 let instance: StorageProvider | null = null;
+
+/**
+ * Builds an {@link ExternalAccountClient} for Workload Identity Federation
+ * (Vercel OIDC → GCP). Returns null when the required env vars are absent
+ * (e.g. local dev).
+ */
+function buildWifAuthClient() {
+  const poolId = process.env.GCP_WORKLOAD_IDENTITY_POOL_ID;
+  const providerId = process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID;
+  const projectNumber = process.env.GCP_PROJECT_NUMBER;
+  const saEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
+
+  if (!poolId || !providerId || !projectNumber || !saEmail) return null;
+
+  const client = ExternalAccountClient.fromJSON({
+    type: "external_account",
+    audience: `//iam.googleapis.com/projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/${providerId}`,
+    subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+    token_url: "https://sts.googleapis.com/v1/token",
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${saEmail}:generateAccessToken`,
+    subject_token_supplier: {
+      getSubjectToken: async () => {
+        const token = process.env.VERCEL_OIDC_TOKEN;
+        if (!token) {
+          throw new Error(
+            "VERCEL_OIDC_TOKEN not available. Ensure Vercel OIDC is enabled in project settings."
+          );
+        }
+        return token;
+      },
+    },
+  });
+
+  if (!client) {
+    console.error(
+      JSON.stringify({
+        tag: "storage.wif",
+        phase: "init_failed",
+        hint: "ExternalAccountClient.fromJSON returned null. Check WIF env vars.",
+      })
+    );
+  }
+
+  return client;
+}
 
 export function getStorageProvider(): StorageProvider {
   if (instance) return instance;
@@ -14,28 +60,53 @@ export function getStorageProvider(): StorageProvider {
   if (providerType === "gcs") {
     const bucketName = process.env.GCS_BUCKET_NAME;
     const projectId = process.env.GCS_PROJECT_ID;
-    const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
 
     if (!bucketName) {
       throw new Error("GCS_BUCKET_NAME environment variable is not set");
     }
 
+    // Prefer WIF (keyless); fall back to JSON key for non-Vercel environments.
+    const authClient = buildWifAuthClient();
+
     let credentials;
-    if (credentialsJson) {
-      try {
-        credentials = JSON.parse(credentialsJson);
-      } catch (e) {
-        console.error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON", e);
+    if (!authClient) {
+      const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+      if (credentialsJson) {
+        try {
+          credentials = JSON.parse(credentialsJson);
+        } catch (e) {
+          console.error("Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON", e);
+        }
       }
     }
 
     instance = new GCSStorageProvider({
       bucketName,
       projectId,
-      credentials,
+      ...(authClient ? { authClient } : { credentials }),
     });
+
+    const authMode = authClient ? "wif" : credentials ? "json-key" : "none";
+    console.info(
+      JSON.stringify({
+        tag: "storage.init",
+        provider: "gcs",
+        bucket: bucketName,
+        authMode,
+      })
+    );
   } else {
     instance = new LocalStorageProvider();
+
+    console.info(
+      JSON.stringify({
+        tag: "storage.init",
+        provider: "local",
+        hint: providerType !== "local"
+          ? `STORAGE_PROVIDER="${providerType}" not recognized; fell back to local.`
+          : undefined,
+      })
+    );
   }
 
   return instance;
