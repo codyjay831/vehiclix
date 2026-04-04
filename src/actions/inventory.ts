@@ -48,6 +48,13 @@ function logInventoryUpdate(
   );
 }
 
+/** Env-derived only; does not instantiate storage (avoids throw before logging). */
+function effectiveStorageModeLabel(): "gcs" | "local" {
+  const explicit = process.env.STORAGE_PROVIDER?.trim().toLowerCase();
+  if (explicit === "gcs" || explicit === "local") return explicit;
+  return process.env.GCS_BUCKET_NAME ? "gcs" : "local";
+}
+
 /** Multipart entries are not always `instanceof File` across runtimes; accept Blob-like image parts only. */
 function isUploadableImagePart(entry: FormDataEntryValue): boolean {
   if (typeof entry !== "object" || entry === null) return false;
@@ -151,11 +158,59 @@ async function buildVehicleMediaRowsFromImageFiles(
       if (file.type && !file.type.startsWith("image/")) {
         throw new Error("Only image files are supported for vehicle photos.");
       }
+      const sizeBytes = typeof file.size === "number" ? file.size : undefined;
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "file_enter",
+          vehicleId,
+          index: i,
+          sizeBytes,
+        })
+      );
+      const tRead = Date.now();
       const raw = Buffer.from(await file.arrayBuffer());
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "read_buffer_ok",
+          vehicleId,
+          index: i,
+          ms: Date.now() - tRead,
+          bytes: raw.length,
+        })
+      );
+      const tSharp = Date.now();
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "variants_start",
+          vehicleId,
+          index: i,
+        })
+      );
       const variants = await generateVehicleImageVariants(raw);
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "variants_ok",
+          vehicleId,
+          index: i,
+          ms: Date.now() - tSharp,
+        })
+      );
       const mediaId = randomUUID();
       const base = `${vehicleId}/${mediaId}`;
 
+      const tUpload = Date.now();
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "storage_upload_start",
+          vehicleId,
+          index: i,
+        })
+      );
       const thumbKey = await saveBuffer(variants.thumb, {
         filename: `${base}/thumb.jpg`,
         contentType: "image/jpeg",
@@ -176,6 +231,15 @@ async function buildVehicleMediaRowsFromImageFiles(
         isPublic: true,
       });
       uploadedStorageKeys.push(galleryKey);
+      console.info(
+        JSON.stringify({
+          tag: "inventory.photoPipeline",
+          phase: "storage_upload_ok",
+          vehicleId,
+          index: i,
+          ms: Date.now() - tUpload,
+        })
+      );
 
       mediaRecords.push({
         id: mediaId,
@@ -223,6 +287,11 @@ export async function updateVehicleAction(
     if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
       return { ok: false, error: "Unauthorized" };
     }
+
+    logInventoryUpdate("action_enter", {
+      vehicleId,
+      storageMode: effectiveStorageModeLabel(),
+    });
 
     const vehicle = await db.vehicle.findFirst({
       where: { id: vehicleId, organizationId: user.organizationId },
@@ -298,11 +367,18 @@ export async function updateVehicleAction(
     const internalNotes = (formData.get("internalNotes") as string) || null;
 
     const photoFiles = getPhotoFilesFromFormData(formData);
+    const rawFileLike = countFileLikePhotoParts(formData);
+    const photoBytesTotal = photoFiles.reduce((n, f) => n + (typeof f.size === "number" ? f.size : 0), 0);
     const photoExtract = assertAllSubmittedPhotoPartsAccepted(formData, photoFiles, "updateVehicleAction");
     if (!photoExtract.ok) {
       return { ok: false, error: photoExtract.error };
     }
-    logInventoryUpdate("parsed", { vehicleId, photoCount: photoFiles.length });
+    logInventoryUpdate("parsed", {
+      vehicleId,
+      rawFileLike,
+      acceptedPhotos: photoFiles.length,
+      photoBytesTotal,
+    });
 
     if (!vin || !year || !make || !model) {
       return { ok: false, error: "Missing identification fields" };
@@ -409,6 +485,8 @@ export async function updateVehicleAction(
       return { ok: false, error: message };
     }
 
+    logInventoryUpdate("db_tx_ok", { vehicleId, photosAppended: appendedMedia.length });
+
     const orgSlug = vehicle.organization.slug;
     const publicId = vehicle.slug || vehicleId;
 
@@ -432,7 +510,7 @@ export async function updateVehicleAction(
       }
     });
 
-    logInventoryUpdate("save_ok", { vehicleId, photosAppended: appendedMedia.length });
+    logInventoryUpdate("return_ok", { vehicleId, photosAppended: appendedMedia.length });
 
     return { ok: true, photosAppended: appendedMedia.length };
   } catch (err) {

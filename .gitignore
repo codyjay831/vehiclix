@@ -12,5 +12,12 @@ storage/
 # Allow src/lib/storage (provider implementation)
 !src/lib/storage/
 !src/lib/storage/**
+
+# Local vehicle uploads (STORAGE_PROVIDER=local); keep tree with .gitkeep only
+public/uploads/inventory/*
+!public/uploads/inventory/.gitkeep
+
+# Playwright/local proof script temp image
+scripts/.proof-tmp/
 .vercel
 .env*.local

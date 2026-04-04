@@ -14,6 +14,8 @@
     "migrate:deploy": "prisma migrate deploy",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
+    "env:print-targets": "tsx scripts/print-runtime-targets.ts",
+    "proof:local-media": "tsx scripts/proof-local-media.ts",
     "db:migrate:prod:win": "powershell -ExecutionPolicy Bypass -File scripts/run-production-migrate.ps1",
     "validate:support-mode": "tsx scripts/enforce-support-mode.ts",
     "guard:public-org-id": "tsx scripts/guards/no-client-organization-id-in-public-api.ts",

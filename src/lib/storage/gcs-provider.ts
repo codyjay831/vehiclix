@@ -39,11 +39,13 @@ export class GCSStorageProvider implements StorageProvider {
     await gcsFile.save(buffer, {
       resumable: false,
       contentType: file.type,
-      // Bucket settings usually handle public/private, but we can set them explicitly
       metadata: {
         cacheControl: "public, max-age=31536000",
       },
     });
+    if (options.isPublic) {
+      await this.tryMakeInventoryObjectPublic(gcsFile, storageKey);
+    }
 
     return filename;
   }
@@ -62,8 +64,35 @@ export class GCSStorageProvider implements StorageProvider {
         cacheControl: "public, max-age=31536000",
       },
     });
+    if (options.isPublic) {
+      await this.tryMakeInventoryObjectPublic(gcsFile, storageKey);
+    }
 
     return filename;
+  }
+
+  /**
+   * Listing images use {@link getPublicUrl} (anonymous HTTPS). Default GCS uploads are private;
+   * without public read, browsers get 403 on the public URL.
+   * Skips safely when the bucket uses uniform bucket-level access (set bucket IAM instead).
+   */
+  private async tryMakeInventoryObjectPublic(
+    gcsFile: ReturnType<ReturnType<Storage["bucket"]>["file"]>,
+    storageKey: string
+  ): Promise<void> {
+    try {
+      await gcsFile.makePublic();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        JSON.stringify({
+          tag: "storage.gcs.makePublicSkipped",
+          storageKey,
+          hint: "If images 403, add public/objectViewer on this prefix or disable uniform bucket-level access for object ACLs.",
+          message,
+        })
+      );
+    }
   }
 
   async getReadStream(key: string): Promise<Readable> {
