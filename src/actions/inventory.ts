@@ -20,15 +20,12 @@ import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
 import { INTAKE_PLACEHOLDER_PRICE } from "@/lib/intake-draft-placeholders";
 
 /**
- * STORAGE CLEANUP GAP (documented — not fixed in this pass):
- * - Vehicle delete: There is no deleteVehicleAction in this codebase. If one is added, or if
- *   vehicles/media are deleted via DB (CASCADE removes VehicleMedia rows), storage files are
- *   NOT removed. Safe fix: when implementing vehicle/media delete, fetch media URLs and call
- *   deleteFile() from @/lib/storage for each before deleting DB rows.
- * - Document replace: Orphan cleanup is already implemented in document.ts (uploadDocumentAction
- *   deletes the previous file when a document is re-uploaded).
- * - Adding a broad background cleanup job would require design (e.g. list bucket vs DB keys);
- *   prefer targeted cleanup at delete time when those flows exist.
+ * Storage cleanup notes:
+ * - Vehicle media delete: implemented in vehicle-media.ts (deleteVehicleMediaAction) — removes
+ *   stored files via deleteStoredVehicleMediaFiles before/after DB delete as appropriate.
+ * - Vehicle delete: There is no deleteVehicleAction; CASCADE would still orphan storage if added
+ *   without calling the same storage helpers per media row.
+ * - Document replace: Orphan cleanup is implemented in document.ts (uploadDocumentAction).
  */
 
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];

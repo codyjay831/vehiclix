@@ -39,8 +39,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
+import {
+  deleteVehicleMediaAction,
+  makePrimaryVehicleMediaAction,
+  reorderVehicleMediaAction,
+} from "@/actions/vehicle-media";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, X, Upload, Save, Search, CheckCircle2, Star, Circle, AlertTriangle, ArrowDown } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  X,
+  Upload,
+  Save,
+  Search,
+  CheckCircle2,
+  Star,
+  Circle,
+  AlertTriangle,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
+} from "lucide-react";
 import { decodeVin, type VinMetadata } from "@/lib/vin";
 import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
 import { applyVinMetadataToVehicleForm } from "@/lib/vehicle-vin-form-merge";
@@ -311,7 +331,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
   const existingSavedMedia = React.useMemo(() => {
     if (!isEdit || !initialData?.media || !Array.isArray(initialData.media)) return [];
-    return initialData.media as Array<{
+    const list = initialData.media as Array<{
       id: string;
       url: string;
       thumbUrl?: string | null;
@@ -319,7 +339,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       galleryUrl?: string | null;
       displayOrder: number;
     }>;
+    return [...list].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   }, [isEdit, initialData?.media]);
+
+  const [savedMediaWorking, setSavedMediaWorking] = React.useState(false);
+  const [pendingDeleteMediaId, setPendingDeleteMediaId] = React.useState<string | null>(null);
 
   const totalPhotoCount = existingSavedMedia.length + photos.length;
 
@@ -1328,7 +1352,55 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
       next.unshift(selected!);
       return next;
     });
-    toast.success("Primary photo updated");
+    toast.success(
+      isEdit ? "Order updated for new uploads (not yet on the listing)" : "First photo updated"
+    );
+  };
+
+  const runSavedMediaMutation = async (fn: () => Promise<void>, successMessage: string) => {
+    if (!isEdit || !initialData?.id) return;
+    setSavedMediaWorking(true);
+    try {
+      await fn();
+      toast.success(successMessage);
+      router.refresh();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Something went wrong";
+      toast.error(message);
+    } finally {
+      setSavedMediaWorking(false);
+    }
+  };
+
+  const handleSavedMove = (index: number, direction: -1 | 1) => {
+    const vehicleId = initialData?.id;
+    if (!vehicleId) return;
+    const j = index + direction;
+    if (j < 0 || j >= existingSavedMedia.length) return;
+    const ids = existingSavedMedia.map((m) => m.id);
+    const next = [...ids];
+    [next[index], next[j]] = [next[j]!, next[index]!];
+    void runSavedMediaMutation(
+      () => reorderVehicleMediaAction(vehicleId, next),
+      "Photo order updated"
+    );
+  };
+
+  const handleSavedMakePrimary = (mediaId: string) => {
+    const vehicleId = initialData?.id;
+    if (!vehicleId) return;
+    void runSavedMediaMutation(
+      () => makePrimaryVehicleMediaAction(vehicleId, mediaId),
+      "Primary photo updated"
+    );
+  };
+
+  const confirmDeleteSavedMedia = () => {
+    const vehicleId = initialData?.id;
+    if (!pendingDeleteMediaId || !isEdit || !vehicleId) return;
+    const id = pendingDeleteMediaId;
+    setPendingDeleteMediaId(null);
+    void runSavedMediaMutation(() => deleteVehicleMediaAction(vehicleId, id), "Photo removed");
   };
 
   const resolvedOcrVinForConfirm = pendingOcrVinReview
@@ -2681,6 +2753,13 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             </CardTitle>
             <p className="text-sm text-muted-foreground leading-relaxed">
               Upload photos for this vehicle. Images are optimized automatically (thumbnail, card, and gallery sizes).
+              {isEdit ? (
+                <>
+                  {" "}
+                  On this page, the <span className="font-medium text-foreground">first saved photo</span> is the
+                  listing hero (showroom card, vehicle page, and ZIP export order).
+                </>
+              ) : null}
             </p>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -2717,18 +2796,87 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
             {existingSavedMedia.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">Saved photos</p>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Saved photos (live order)</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Reorder, set primary, or remove photos below. Changes apply immediately and update your listing.
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                   {existingSavedMedia.map((m, i) => (
                     <div
                       key={m.id}
-                      className="relative aspect-square rounded-md overflow-hidden border bg-muted shadow-sm"
+                      className="relative group aspect-square rounded-md overflow-hidden border bg-muted shadow-sm"
                     >
                       <img
                         src={vehicleMediaAdminThumbUrl(m)}
                         alt=""
                         className="h-full w-full object-cover"
                       />
+                      <div className="absolute top-1 left-1 right-1 flex items-start justify-between gap-1 pointer-events-none">
+                        <div className="flex gap-1 pointer-events-auto">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity"
+                            disabled={savedMediaWorking || isSubmitting || i === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSavedMove(i, -1);
+                            }}
+                            title="Move left"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity"
+                            disabled={savedMediaWorking || isSubmitting || i >= existingSavedMedia.length - 1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSavedMove(i, 1);
+                            }}
+                            title="Move right"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex gap-1 pointer-events-auto">
+                          {i !== 0 && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="icon"
+                              className="h-7 w-7 opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity"
+                              disabled={savedMediaWorking || isSubmitting}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSavedMakePrimary(m.id);
+                              }}
+                              title="Make primary (listing hero)"
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity"
+                            disabled={savedMediaWorking || isSubmitting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDeleteMediaId(m.id);
+                            }}
+                            title="Remove photo"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
                       {i === 0 && (
                         <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-primary-foreground text-[10px] font-bold py-1 text-center flex items-center justify-center gap-1">
                           <CheckCircle2 className="h-3 w-3" />
@@ -2743,9 +2891,18 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
 
             {photos.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">
-                  {isEdit ? "New photos (will upload when you save)" : "Selected photos"}
-                </p>
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {isEdit ? "New photos (will upload when you save)" : "Selected photos"}
+                  </p>
+                  {isEdit ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      These files are not on the listing yet. They are appended after your saved photos when you click
+                      Save Changes. Order here only affects that upload batch — not the live hero until they are
+                      saved.
+                    </p>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                   {photos.map((photo, index) => (
                     <div
@@ -2768,7 +2925,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                               e.stopPropagation();
                               setPrimaryPhoto(index);
                             }}
-                            title="Set as Primary"
+                            title={isEdit ? "Move to front of this new batch" : "Set as first photo"}
                           >
                             <Star className="h-3 w-3" />
                           </Button>
@@ -2789,7 +2946,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                       {index === 0 && (
                         <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-primary-foreground text-[10px] font-bold py-1 text-center flex items-center justify-center gap-1">
                           <CheckCircle2 className="h-3 w-3" />
-                          Primary (new)
+                          {isEdit ? "1st of new batch" : "Primary"}
                         </div>
                       )}
                     </div>
@@ -2801,7 +2958,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
             <FormDescription>
               {!isEdit
                 ? "At least one photo is required before you can publish to the showroom. Drafts may be saved without photos."
-                : "Add more listing photos anytime; they use the same optimization as new vehicles. Saving uploads any new images above."}
+                : "Add more photos anytime; new files use the same optimization. Saved photos can be reordered above; new files are always appended after them when you save."}
             </FormDescription>
           </CardContent>
         </Card>
@@ -2969,6 +3126,31 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
               </Button>
               <Button type="button" onClick={confirmUseDocumentVin}>
                 Use document VIN
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={pendingDeleteMediaId != null} onOpenChange={(open) => !open && setPendingDeleteMediaId(null)}>
+          <DialogContent className="sm:max-w-md" showCloseButton>
+            <DialogHeader>
+              <DialogTitle>Remove this photo?</DialogTitle>
+              <DialogDescription>
+                This removes the image from the listing and deletes stored files. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-end border-0 bg-transparent p-0 pt-2">
+              <Button type="button" variant="outline" onClick={() => setPendingDeleteMediaId(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={savedMediaWorking}
+                onClick={() => confirmDeleteSavedMedia()}
+              >
+                {savedMediaWorking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Remove photo
               </Button>
             </DialogFooter>
           </DialogContent>
