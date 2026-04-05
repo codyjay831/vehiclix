@@ -3,6 +3,16 @@ import type { VehicleWithMedia } from "@/lib/prisma/vehicle-safe-select";
 import { Prisma, VehicleStatus } from "@prisma/client";
 import { getPublicUrl } from "@/lib/storage";
 
+export type AdminInventoryCounts = {
+  PUBLISHED: number;
+  STAGING: number;
+  DRAFT: number;
+  DEALS: number;
+  SOLD: number;
+  ARCHIVED: number;
+  ALL: number;
+};
+
 function enrichMediaKey(key: string | null | undefined): string | null {
   if (key == null) return null;
   const t = String(key).trim();
@@ -226,4 +236,34 @@ export async function getPublicVehicleDetailBySlugOrId(
     select,
   });
   return enrichVehicleMedia(byId) as VehicleWithMedia | null;
+}
+
+/**
+ * Fetches status-based counts for the admin inventory dashboard.
+ */
+export async function getAdminInventoryCounts(organizationId: string): Promise<AdminInventoryCounts> {
+  const counts = await db.vehicle.groupBy({
+    by: ["vehicleStatus"],
+    where: { organizationId },
+    _count: { _all: true },
+  });
+
+  const countMap = counts.reduce((acc, curr) => {
+    acc[curr.vehicleStatus] = curr._count._all;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const totalCount = await db.vehicle.count({
+    where: { organizationId },
+  });
+
+  return {
+    PUBLISHED: countMap["LISTED"] || 0,
+    STAGING: countMap["UNPUBLISHED"] || 0,
+    DRAFT: countMap["DRAFT"] || 0,
+    DEALS: (countMap["RESERVED"] || 0) + (countMap["UNDER_CONTRACT"] || 0),
+    SOLD: countMap["SOLD"] || 0,
+    ARCHIVED: countMap["ARCHIVED"] || 0,
+    ALL: totalCount,
+  };
 }

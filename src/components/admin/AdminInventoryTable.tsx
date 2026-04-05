@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type, Trash2, RotateCw } from "lucide-react";
+import { MoreHorizontal, Search, ExternalLink, Copy, Share2, Facebook, Eye, Edit, EyeOff, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type, Trash2, RotateCw } from "lucide-react";
 import {
   VehicleStatus,
   VEHICLE_STATUS_LABELS,
@@ -63,13 +63,22 @@ const getStatusBadgeVariant = (status: VehicleStatus) => {
 
 interface AdminInventoryTableProps {
   initialVehicles: SerializedVehicleWithMedia[];
+  statusCounts: {
+    PUBLISHED: number;
+    STAGING: number;
+    DRAFT: number;
+    DEALS: number;
+    SOLD: number;
+    ARCHIVED: number;
+    ALL: number;
+  };
 }
 
 type FilterGroup = "ALL" | "PUBLISHED" | "STAGING" | "DRAFT" | "DEALS" | "SOLD" | "ARCHIVED";
 
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
-export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProps) {
+export function AdminInventoryTable({ initialVehicles, statusCounts }: AdminInventoryTableProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -210,13 +219,27 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
           className="w-full sm:w-auto"
         >
           <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0">
-            <TabsTrigger value="PUBLISHED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Published</TabsTrigger>
-            <TabsTrigger value="STAGING" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Unpublished</TabsTrigger>
-            <TabsTrigger value="DRAFT" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Draft</TabsTrigger>
-            <TabsTrigger value="DEALS" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">In Deals</TabsTrigger>
-            <TabsTrigger value="SOLD" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Sold</TabsTrigger>
-            <TabsTrigger value="ARCHIVED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Archived</TabsTrigger>
-            <TabsTrigger value="ALL" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">All</TabsTrigger>
+            <TabsTrigger value="PUBLISHED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              Published ({statusCounts.PUBLISHED})
+            </TabsTrigger>
+            <TabsTrigger value="STAGING" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              Unpublished ({statusCounts.STAGING})
+            </TabsTrigger>
+            <TabsTrigger value="DRAFT" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              Draft ({statusCounts.DRAFT})
+            </TabsTrigger>
+            <TabsTrigger value="DEALS" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              In Deals ({statusCounts.DEALS})
+            </TabsTrigger>
+            <TabsTrigger value="SOLD" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              Sold ({statusCounts.SOLD})
+            </TabsTrigger>
+            <TabsTrigger value="ARCHIVED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              Archived ({statusCounts.ARCHIVED})
+            </TabsTrigger>
+            <TabsTrigger value="ALL" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+              All ({statusCounts.ALL})
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 

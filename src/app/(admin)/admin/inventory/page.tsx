@@ -1,7 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { getAdminInventory } from "@/lib/inventory";
+import { getAdminInventory, getAdminInventoryCounts } from "@/lib/inventory";
 import { AdminInventoryTable } from "@/components/admin/AdminInventoryTable";
 import { Button } from "@/components/ui/button";
 import { requireUserWithOrg } from "@/lib/auth";
@@ -12,6 +12,7 @@ export default async function AdminInventoryPage() {
 
   // Direct server-side data fetching
   const vehicles = await getAdminInventory(user.organizationId);
+  const statusCounts = await getAdminInventoryCounts(user.organizationId);
 
   // Serialize Decimal objects and Dates for Client Component serialization
   const serializedVehicles = serializeVehicle(vehicles);
@@ -33,7 +34,10 @@ export default async function AdminInventoryPage() {
         </Button>
       </div>
 
-      <AdminInventoryTable initialVehicles={serializedVehicles} />
+      <AdminInventoryTable 
+        initialVehicles={serializedVehicles} 
+        statusCounts={statusCounts}
+      />
     </div>
   );
 }
