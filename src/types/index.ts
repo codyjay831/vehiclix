@@ -75,6 +75,7 @@ export type EnergyRequestWithHistory = Prisma.EnergyServiceRequestGetPayload<{
  * Serialized vehicle types (Decimal -> number, Date -> string)
  */
 export type { SerializedVehicle, SerializedVehicleWithMedia } from "@/lib/vehicle-serialization";
+export type { PublicPricingMode } from "@/lib/api/dto/public-vehicle-card";
 
 // 3. Re-export all label maps and enum helpers
 export * from "./enums";

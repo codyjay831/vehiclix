@@ -88,6 +88,7 @@ export function mapPublicVehicleCardForStorefrontGrid(card: PublicVehicleCardDto
     model: card.model,
     trim: card.trim,
     price: card.price,
+    pricingMode: card.pricingMode,
     mileage: card.mileage,
     drivetrain: card.drivetrain,
     batteryRangeEstimate: card.rangeMiles,
@@ -136,7 +137,7 @@ export const getCachedStorefrontPublicVehicleDetail = cache(fetchStorefrontPubli
 
 /**
  * Map public VDP DTO → Prisma-like media + SerializedVehicle for existing VDP components.
- * VIN is not in the public API DTO; use a neutral placeholder for the specs row.
+ * Canon: Public vehicle identity includes VIN from DTO.
  */
 export function mapPublicVehicleDetailDtoForStorefrontVdp(dto: PublicVehicleDetailDto): {
   media: VehicleMedia[];
@@ -157,7 +158,7 @@ export function mapPublicVehicleDetailDtoForStorefrontVdp(dto: PublicVehicleDeta
   const serializedVehicle = {
     id: dto.id,
     slug: dto.slug,
-    vin: "",
+    vin: dto.vin,
     year: dto.year,
     make: dto.make,
     model: dto.model,
@@ -177,6 +178,7 @@ export function mapPublicVehicleDetailDtoForStorefrontVdp(dto: PublicVehicleDeta
     condition: dto.condition,
     titleStatus: dto.titleStatus,
     price: dto.price,
+    pricingMode: dto.pricingMode,
     description: dto.description,
     highlights: dto.highlights,
     features: dto.features,

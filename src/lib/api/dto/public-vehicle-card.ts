@@ -6,13 +6,21 @@
 import type { VehicleWithMedia } from "@/types";
 import { vehicleMediaCardUrl } from "@/lib/vehicle-media-display";
 
-function stringifyPrice(value: unknown): string {
-  if (value == null) return "0";
+/**
+ * Public pricing mode for Website Integration API v1.
+ * Determines how the website should render price and CTA.
+ */
+export type PublicPricingMode = "LIST_PRICE" | "PRICE_ON_REQUEST" | "CALL_FOR_PRICE" | "HIDE_PRICE";
+
+function stringifyPrice(value: unknown): string | null {
+  if (value == null) return null;
   if (typeof value === "string") return value;
   if (typeof value === "object" && typeof (value as { toString?: () => string }).toString === "function") {
-    return (value as { toString: () => string }).toString();
+    const s = (value as { toString: () => string }).toString();
+    return s === "0" ? null : s;
   }
-  return String(value);
+  const s = String(value);
+  return s === "0" ? null : s;
 }
 
 export interface PublicVehicleCardDto {
@@ -23,9 +31,12 @@ export interface PublicVehicleCardDto {
   make: string;
   model: string;
   trim: string | null;
-  price: string;
+  /** numeric string price or null if no price is to be shown. */
+  price: string | null;
+  /** Source of truth for pricing presentation. */
+  pricingMode: PublicPricingMode;
   mileage: number;
-  /** batteryRangeEstimate in miles. */
+  /** batteryRange Estimate in miles. */
   rangeMiles: number | null;
   condition: string;
   drivetrain: string;
@@ -42,6 +53,13 @@ export function toPublicVehicleCardDto(vehicle: VehicleWithMedia): PublicVehicle
   const heroUrl =
     firstMedia && typeof firstMedia.url === "string" ? vehicleMediaCardUrl(firstMedia) : null;
 
+  // Bridge logic: if price is null, 0, or placeholder, default to PRICE_ON_REQUEST
+  const rawPrice = vehicle.price;
+  const pStr = stringifyPrice(rawPrice);
+  const pNum = Number(pStr);
+  const isPlaceholder = pNum === 1000; // INTAKE_PLACEHOLDER_PRICE
+  const hasPrice = pStr != null && pNum > 0 && !isPlaceholder;
+
   return {
     id: vehicle.id,
     slug: vehicle.slug ?? null,
@@ -49,7 +67,8 @@ export function toPublicVehicleCardDto(vehicle: VehicleWithMedia): PublicVehicle
     make: vehicle.make,
     model: vehicle.model,
     trim: vehicle.trim ?? null,
-    price: stringifyPrice(vehicle.price),
+    price: hasPrice ? pStr : null,
+    pricingMode: hasPrice ? "LIST_PRICE" : "PRICE_ON_REQUEST",
     mileage: vehicle.mileage,
     rangeMiles: vehicle.batteryRangeEstimate ?? null,
     condition: vehicle.condition,

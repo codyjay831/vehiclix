@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { VehicleWithMedia } from "@/lib/prisma/vehicle-safe-select";
+import type { PublicPricingMode } from "./api/dto/public-vehicle-card";
 
 /**
  * Deeply serializes a vehicle object (or any object) for transfer from Server to Client.
@@ -43,10 +44,11 @@ export function serializeVehicle<T>(obj: T): any {
 
 /**
  * Specialized type for the serialized version of a Vehicle payload.
+ * Added pricingMode and allowed price to be null/string for truthful public DTOs.
  */
 export type SerializedVehicle<T = VehicleWithMedia> = {
   [K in keyof T]: T[K] extends Prisma.Decimal
-    ? number
+    ? number | string | null
     : T[K] extends Date
       ? string
       : T[K] extends (infer U)[]
@@ -56,6 +58,8 @@ export type SerializedVehicle<T = VehicleWithMedia> = {
             ? SerializedVehicle<T[K]>
             : T[K]
           : T[K];
+} & { 
+  pricingMode?: PublicPricingMode;
 };
 
 /**

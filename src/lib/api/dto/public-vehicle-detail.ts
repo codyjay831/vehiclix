@@ -5,14 +5,17 @@
 
 import type { VehicleWithMedia } from "@/types";
 import { vehicleMediaGalleryUrl } from "@/lib/vehicle-media-display";
+import type { PublicPricingMode } from "./public-vehicle-card";
 
-function stringifyPrice(value: unknown): string {
-  if (value == null) return "0";
+function stringifyPrice(value: unknown): string | null {
+  if (value == null) return null;
   if (typeof value === "string") return value;
   if (typeof value === "object" && typeof (value as { toString?: () => string }).toString === "function") {
-    return (value as { toString: () => string }).toString();
+    const s = (value as { toString: () => string }).toString();
+    return s === "0" ? null : s;
   }
-  return String(value);
+  const s = String(value);
+  return s === "0" ? null : s;
 }
 
 export interface PublicVehicleDetailDealerSummary {
@@ -24,11 +27,16 @@ export interface PublicVehicleDetailDto {
   id: string;
   /** Canon primary public identity (unique per dealer). */
   slug: string | null;
+  /** Permanent public VIN identifier. */
+  vin: string;
   year: number;
   make: string;
   model: string;
   trim: string | null;
-  price: string;
+  /** numeric string price or null if no price is to be shown. */
+  price: string | null;
+  /** Source of truth for pricing presentation. */
+  pricingMode: PublicPricingMode;
   mileage: number;
   rangeMiles: number | null;
   condition: string;
@@ -68,14 +76,22 @@ export function toPublicVehicleDetailDto(vehicle: VehicleWithMedia): PublicVehic
 
   const org = vehicle.organization as { name?: string; slug?: string } | null;
 
+  // Bridge logic: if price is null, 0, or placeholder (1000), default to PRICE_ON_REQUEST
+  const pStr = stringifyPrice(vehicle.price);
+  const pNum = Number(pStr);
+  const isPlaceholder = pNum === 1000;
+  const hasPrice = pStr != null && pNum > 0 && !isPlaceholder;
+
   return {
     id: vehicle.id,
     slug: vehicle.slug ?? null,
+    vin: vehicle.vin,
     year: vehicle.year,
     make: vehicle.make,
     model: vehicle.model,
     trim: vehicle.trim ?? null,
-    price: stringifyPrice(vehicle.price),
+    price: hasPrice ? pStr : null,
+    pricingMode: hasPrice ? "LIST_PRICE" : "PRICE_ON_REQUEST",
     mileage: vehicle.mileage,
     rangeMiles: vehicle.batteryRangeEstimate ?? null,
     condition: vehicle.condition,
