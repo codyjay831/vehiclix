@@ -5,6 +5,7 @@ import { getAdminInventory } from "@/lib/inventory";
 import { AdminInventoryTable } from "@/components/admin/AdminInventoryTable";
 import { Button } from "@/components/ui/button";
 import { requireUserWithOrg } from "@/lib/auth";
+import { serializeVehicle } from "@/lib/vehicle-serialization";
 
 export default async function AdminInventoryPage() {
   const user = await requireUserWithOrg();
@@ -12,11 +13,8 @@ export default async function AdminInventoryPage() {
   // Direct server-side data fetching
   const vehicles = await getAdminInventory(user.organizationId);
 
-  // Serialize Decimal objects for Client Component serialization
-  const serializedVehicles = vehicles.map(vehicle => ({
-    ...vehicle,
-    price: Number(vehicle.price)
-  }));
+  // Serialize Decimal objects and Dates for Client Component serialization
+  const serializedVehicles = serializeVehicle(vehicles);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -35,7 +33,7 @@ export default async function AdminInventoryPage() {
         </Button>
       </div>
 
-      <AdminInventoryTable initialVehicles={serializedVehicles as any} />
+      <AdminInventoryTable initialVehicles={serializedVehicles} />
     </div>
   );
 }

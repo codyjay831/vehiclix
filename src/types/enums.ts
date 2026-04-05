@@ -33,9 +33,11 @@ export const TITLE_STATUS_LABELS: Record<TitleStatus, string> = {
   LEMON: "Lemon",
 };
 
+/** Admin-facing labels; LISTED is shown as "Published" (live on public site). */
 export const VEHICLE_STATUS_LABELS: Record<VehicleStatus, string> = {
   DRAFT: "Draft",
-  LISTED: "Available",
+  UNPUBLISHED: "Unpublished",
+  LISTED: "Published",
   RESERVED: "Reserved",
   UNDER_CONTRACT: "Contract in Progress",
   SOLD: "Sold",

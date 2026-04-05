@@ -1,0 +1,2 @@
+-- Add UNPUBLISHED for workflow: DRAFT -> UNPUBLISHED -> LISTED (only LISTED is public).
+ALTER TYPE "VehicleStatus" ADD VALUE 'UNPUBLISHED' AFTER 'DRAFT';

@@ -30,6 +30,8 @@ export const vehicleSafeScalarSelect = {
   highlights: true,
   features: true,
   internalNotes: true,
+  conditionNotes: true,
+  intakeFieldProvenance: true,
   vehicleStatus: true,
   createdAt: true,
   updatedAt: true,
@@ -94,6 +96,17 @@ export function buildVehicleInventorySelect(mediaTake?: number) {
       select: vehicleMediaSelect,
     },
     organization: { select: vehicleOrganizationSummarySelect },
+    listingDrafts: {
+      select: {
+        id: true,
+        channel: true,
+        title: true,
+        body: true,
+        tone: true,
+        length: true,
+        updatedAt: true,
+      },
+    },
     _count: { select: { inquiries: true } },
   } satisfies Prisma.VehicleSelect;
 }

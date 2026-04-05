@@ -72,22 +72,9 @@ export type EnergyRequestWithHistory = Prisma.EnergyServiceRequestGetPayload<{
 }>;
 
 /**
- * Serialized vehicle type (Decimal -> string, Date -> string)
+ * Serialized vehicle types (Decimal -> number, Date -> string)
  */
-export type SerializedVehicle<T = Prisma.VehicleGetPayload<{}>> = {
-  [K in keyof T]: T[K] extends Prisma.Decimal 
-    ? string 
-    : T[K] extends Date 
-      ? string 
-      : T[K] extends object 
-        ? SerializedVehicle<T[K]> 
-        : T[K];
-};
-
-/**
- * Serialized version of VehicleWithMedia
- */
-export type SerializedVehicleWithMedia = SerializedVehicle<VehicleWithMedia>;
+export type { SerializedVehicle, SerializedVehicleWithMedia } from "@/lib/vehicle-serialization";
 
 // 3. Re-export all label maps and enum helpers
 export * from "./enums";

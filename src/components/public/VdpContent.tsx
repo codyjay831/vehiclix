@@ -30,7 +30,7 @@ export function VdpContent({ vehicle }: VdpContentProps) {
             Key Highlights
           </h2>
           <div className="flex flex-wrap gap-3">
-            {vehicle.highlights.map((highlight) => (
+            {vehicle.highlights.map((highlight: string) => (
               <Badge 
                 key={highlight} 
                 variant="outline" 
@@ -50,7 +50,7 @@ export function VdpContent({ vehicle }: VdpContentProps) {
             Included Features
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {vehicle.features.map((feature) => (
+            {vehicle.features.map((feature: string) => (
               <div key={feature} className="flex items-center gap-3 p-4 bg-muted/10 rounded-2xl border-2 border-transparent hover:border-primary/20 transition-all">
                 <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
                 <span className="text-base font-bold tracking-tight">{feature}</span>

@@ -19,6 +19,7 @@ import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
 import { generateUniqueVehicleSlug } from "@/lib/vehicle-slug";
 import { INTAKE_PLACEHOLDER_PRICE } from "@/lib/intake-draft-placeholders";
+import { computeVehicleReadiness } from "@/lib/vehicle-readiness";
 
 /**
  * Storage cleanup notes:
@@ -530,7 +531,8 @@ export async function updateVehicleAction(
 
 /**
  * Action to update only the status of a vehicle.
- * Only allows transitions between DRAFT, LISTED, and ARCHIVED.
+ * Manual transitions among dealer-controlled statuses; RESERVED/UNDER_CONTRACT are deal-driven.
+ * Normal workflow: DRAFT → UNPUBLISHED → LISTED (direct DRAFT → LISTED is not allowed).
  */
 export async function updateVehicleStatusAction(vehicleId: string, newStatus: VehicleStatus) {
   await requireWriteAccess();
@@ -542,10 +544,21 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
   const vehicle = await db.vehicle.findFirst({
     where: { id: vehicleId, organizationId: user.organizationId },
     select: { 
-      vehicleStatus: true, 
-      organizationId: true, 
+      id: true,
+      vin: true,
+      make: true,
+      model: true,
       price: true,
+      vehicleStatus: true, 
+      description: true,
+      highlights: true,
+      trim: true,
+      exteriorColor: true,
+      organizationId: true, 
       slug: true,
+      media: {
+        select: { mediaType: true }
+      },
       organization: { select: { slug: true } }
     },
   });
@@ -554,7 +567,15 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
     throw new Error("Vehicle not found or access denied");
   }
 
-  const allowedStatuses: VehicleStatus[] = ["DRAFT", "LISTED", "ARCHIVED", "SOLD"];
+  const readiness = computeVehicleReadiness(vehicle as any);
+
+  const allowedStatuses: VehicleStatus[] = [
+    "DRAFT",
+    "UNPUBLISHED",
+    "LISTED",
+    "ARCHIVED",
+    "SOLD",
+  ];
   
   if (!allowedStatuses.includes(vehicle.vehicleStatus)) {
     throw new Error(`Manual status changes are not allowed for vehicles in ${vehicle.vehicleStatus} status.`);
@@ -564,10 +585,29 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
     throw new Error(`Status ${newStatus} is not a valid target for manual transition.`);
   }
 
-  if (newStatus === "LISTED" && vehicle.vehicleStatus === "DRAFT") {
-    if (vehicle.price.equals(new Prisma.Decimal(INTAKE_PLACEHOLDER_PRICE))) {
-      throw new Error("Set a listing price on the vehicle before publishing to the showroom.");
+  // Canonical Server-Side Guard: DRAFT -> UNPUBLISHED
+  if (newStatus === "UNPUBLISHED" && vehicle.vehicleStatus === "DRAFT") {
+    if (!readiness.isReadyForUnpublished) {
+      throw new Error(
+        `Cannot move to Unpublished: ${readiness.blockingUnpublished.map(i => i.message).join(", ")}`
+      );
     }
+  }
+
+  // Canonical Server-Side Guard: UNPUBLISHED -> LISTED
+  if (newStatus === "LISTED" && (vehicle.vehicleStatus === "UNPUBLISHED" || vehicle.vehicleStatus === "ARCHIVED")) {
+    if (!readiness.isReadyForPublished) {
+      throw new Error(
+        `Cannot publish to Showroom: ${readiness.blockingPublished.map(i => i.message).join(", ")}`
+      );
+    }
+  }
+
+  // Canonical Server-Side Guard: DRAFT -> LISTED (Blocking shortcuts)
+  if (newStatus === "LISTED" && vehicle.vehicleStatus === "DRAFT") {
+    throw new Error(
+      "Publish this vehicle from Unpublished first: move it to Unpublished, then publish to the showroom."
+    );
   }
 
   await db.$transaction(async (tx) => {
@@ -610,6 +650,16 @@ export async function createVehicleAction(formData: FormData) {
   }
 
   const status = formData.get("status") as VehicleStatus;
+
+  if (status === "LISTED") {
+    throw new Error(
+      "Vehicles cannot be published on create. Save as Draft or Unpublished, then publish from inventory."
+    );
+  }
+
+  if (status !== "DRAFT" && status !== "UNPUBLISHED") {
+    throw new Error(`Invalid create status: ${status}. Use Draft or Unpublished.`);
+  }
 
   const org = await db.organization.findUnique({
     where: { id: user.organizationId! },
@@ -666,6 +716,29 @@ export async function createVehicleAction(formData: FormData) {
   // Media: Sharp pipeline runs before the DB transaction (I/O + CPU outside transaction).
   // Keys uploaded here are best-effort deleted if the transaction fails (orphan mitigation).
   const photos = getPhotoFilesFromFormData(formData);
+
+  // Canonical Server-Side Guard: Creation with UNPUBLISHED status
+  if (status === "UNPUBLISHED") {
+    const mockVehicle = {
+      vin,
+      year,
+      make,
+      model,
+      trim,
+      mileage,
+      price,
+      description,
+      highlights,
+      media: photos.map(() => ({ mediaType: "IMAGE" })), // Mock media for readiness count
+    };
+    const readiness = computeVehicleReadiness(mockVehicle as any);
+    if (!readiness.isReadyForUnpublished) {
+      throw new Error(
+        `Cannot save as Unpublished: ${readiness.blockingUnpublished.map(i => i.message).join(", ")}`
+      );
+    }
+  }
+
   const photoExtract = assertAllSubmittedPhotoPartsAccepted(formData, photos, "createVehicleAction");
   if (!photoExtract.ok) {
     throw new Error(photoExtract.error);
@@ -681,7 +754,8 @@ export async function createVehicleAction(formData: FormData) {
     await Promise.all(uploadedStorageKeys.map((key) => deleteFile(key).catch(() => undefined)));
   };
 
-  const isPublishing = status === "LISTED";
+  // Create never sets LISTED; publishing happens via inventory status action after UNPUBLISHED.
+  const isPublishing = false;
 
   try {
     await db.$transaction(
@@ -799,4 +873,77 @@ export async function trackVehicleShareAction(vehicleId: string, organizationId:
   
   revalidatePath("/admin/inventory");
   revalidatePath(`/admin/inventory/${vehicleId}`);
+}
+
+/**
+ * Saves or updates a listing draft for a specific channel.
+ */
+export async function saveVehicleListingDraftAction(
+  vehicleId: string,
+  channel: string,
+  data: {
+    title?: string;
+    body: string;
+    tone?: string;
+    length?: string;
+  }
+) {
+  await requireWriteAccess();
+  const user = await requireUserWithOrg();
+  if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
+    throw new Error("Unauthorized");
+  }
+
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, organizationId: user.organizationId },
+    select: { id: true },
+  });
+
+  if (!vehicle) {
+    throw new Error("Vehicle not found or access denied");
+  }
+
+  await db.vehicleListingDraft.upsert({
+    where: {
+      vehicleId_channel: {
+        vehicleId,
+        channel,
+      },
+    },
+    update: {
+      title: data.title,
+      body: data.body,
+      tone: data.tone,
+      length: data.length,
+    },
+    create: {
+      vehicleId,
+      channel,
+      title: data.title,
+      body: data.body,
+      tone: data.tone,
+      length: data.length,
+    },
+  });
+
+  revalidatePath(`/admin/inventory/${vehicleId}`);
+}
+
+/**
+ * Retrieves a listing draft for a specific channel.
+ */
+export async function getVehicleListingDraftAction(
+  vehicleId: string,
+  channel: string
+) {
+  const user = await requireUserWithOrg();
+  
+  return await db.vehicleListingDraft.findUnique({
+    where: {
+      vehicleId_channel: {
+        vehicleId,
+        channel,
+      },
+    },
+  });
 }

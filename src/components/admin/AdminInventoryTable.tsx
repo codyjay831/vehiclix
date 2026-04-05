@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3 } from "lucide-react";
+import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type } from "lucide-react";
 import {
-  VehicleWithMedia,
   VehicleStatus,
   VEHICLE_STATUS_LABELS,
 } from "@/types";
+import { SerializedVehicleWithMedia } from "@/lib/vehicle-serialization";
 import { ListingGeneratorModal, GeneratorType } from "./ListingGeneratorModal";
 import { trackVehicleShareAction, updateVehicleStatusAction } from "@/actions/inventory";
 import {
@@ -33,12 +33,17 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { toast } from "sonner";
 import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
+import { computeVehicleReadiness } from "@/lib/vehicle-readiness";
+import { AlertCircle, CheckCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Helper to get status badge styling
 const getStatusBadgeVariant = (status: VehicleStatus) => {
   switch (status) {
     case "LISTED":
       return "default";
+    case "UNPUBLISHED":
+      return "outline";
     case "RESERVED":
     case "UNDER_CONTRACT":
       return "secondary";
@@ -54,23 +59,22 @@ const getStatusBadgeVariant = (status: VehicleStatus) => {
 };
 
 interface AdminInventoryTableProps {
-  initialVehicles: VehicleWithMedia[];
+  initialVehicles: SerializedVehicleWithMedia[];
 }
 
-type FilterGroup = "ALL" | "ACTIVE" | "DRAFT" | "SOLD" | "ARCHIVED";
+type FilterGroup = "ALL" | "PUBLISHED" | "STAGING" | "DRAFT" | "DEALS" | "SOLD" | "ARCHIVED";
 
-const ACTIVE_STATUSES: VehicleStatus[] = ["LISTED", "RESERVED", "UNDER_CONTRACT"];
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
 export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProps) {
   const [search, setSearch] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<FilterGroup>("ACTIVE");
+  const [activeTab, setActiveTab] = React.useState<FilterGroup>("PUBLISHED");
   const [isPending, startTransition] = React.useTransition();
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
-  const [activeVehicle, setActiveVehicle] = React.useState<VehicleWithMedia | null>(null);
+  const [activeVehicle, setActiveVehicle] = React.useState<SerializedVehicleWithMedia | null>(null);
   const [generatorType, setGeneratorType] = React.useState<GeneratorType>("FACEBOOK");
 
-  const openGenerator = (vehicle: VehicleWithMedia, type: GeneratorType) => {
+  const openGenerator = (vehicle: SerializedVehicleWithMedia, type: GeneratorType) => {
     setActiveVehicle(vehicle);
     setGeneratorType(type);
   };
@@ -103,10 +107,14 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
 
       // 2. Tab filter
       let matchesTab = true;
-      if (activeTab === "ACTIVE") {
-        matchesTab = ACTIVE_STATUSES.includes(vehicle.vehicleStatus);
+      if (activeTab === "PUBLISHED") {
+        matchesTab = vehicle.vehicleStatus === "LISTED";
+      } else if (activeTab === "STAGING") {
+        matchesTab = vehicle.vehicleStatus === "UNPUBLISHED";
       } else if (activeTab === "DRAFT") {
         matchesTab = vehicle.vehicleStatus === "DRAFT";
+      } else if (activeTab === "DEALS") {
+        matchesTab = vehicle.vehicleStatus === "RESERVED" || vehicle.vehicleStatus === "UNDER_CONTRACT";
       } else if (activeTab === "SOLD") {
         matchesTab = vehicle.vehicleStatus === "SOLD";
       } else if (activeTab === "ARCHIVED") {
@@ -121,16 +129,18 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <Tabs
-          defaultValue="ACTIVE"
+          defaultValue="PUBLISHED"
           onValueChange={(v) => setActiveTab(v as FilterGroup)}
           className="w-full sm:w-auto"
         >
-          <TabsList>
-            <TabsTrigger value="ACTIVE">Active</TabsTrigger>
-            <TabsTrigger value="DRAFT">Draft</TabsTrigger>
-            <TabsTrigger value="SOLD">Sold</TabsTrigger>
-            <TabsTrigger value="ARCHIVED">Archived</TabsTrigger>
-            <TabsTrigger value="ALL">All</TabsTrigger>
+          <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0">
+            <TabsTrigger value="PUBLISHED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Published</TabsTrigger>
+            <TabsTrigger value="STAGING" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Unpublished</TabsTrigger>
+            <TabsTrigger value="DRAFT" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Draft</TabsTrigger>
+            <TabsTrigger value="DEALS" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">In Deals</TabsTrigger>
+            <TabsTrigger value="SOLD" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Sold</TabsTrigger>
+            <TabsTrigger value="ARCHIVED" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">Archived</TabsTrigger>
+            <TabsTrigger value="ALL" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">All</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -155,6 +165,8 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
               <TableHead>Price</TableHead>
               <TableHead className="hidden lg:table-cell">Mileage</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="hidden md:table-cell">Readiness</TableHead>
+              <TableHead>Next Action</TableHead>
               <TableHead className="hidden xl:table-cell text-right">Created</TableHead>
               <TableHead>Actions</TableHead>
               <TableHead className="text-right">Stats</TableHead>
@@ -205,6 +217,12 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                       {VEHICLE_STATUS_LABELS[vehicle.vehicleStatus]}
                     </Badge>
                   </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <ReadinessIndicator vehicle={vehicle} />
+                  </TableCell>
+                  <TableCell>
+                    <NextActionCell vehicle={vehicle} onStatusChange={handleStatusChange} />
+                  </TableCell>
                   <TableCell className="hidden xl:table-cell text-right text-muted-foreground text-xs">
                     {new Date(vehicle.createdAt).toLocaleDateString()}
                   </TableCell>
@@ -218,30 +236,45 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => copyListingLink(vehicle.id, vehicle.organization.slug, vehicle.organization.id)}>
+                          <DropdownMenuItem 
+                            disabled={vehicle.vehicleStatus !== "LISTED"}
+                            onClick={() => copyListingLink(vehicle.id, vehicle.organization.slug, vehicle.organization.id)}
+                          >
                             <Copy className="mr-2 h-4 w-4" />
                             Copy Link
                           </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`}
-                              target="_blank"
-                            >
-                              <ExternalLink className="mr-2 h-4 w-4" />
-                              Open Listing
-                            </Link>
+                          <DropdownMenuItem asChild disabled={vehicle.vehicleStatus !== "LISTED"}>
+                            {vehicle.vehicleStatus === "LISTED" ? (
+                              <Link
+                                href={`/${vehicle.organization.slug}/inventory/${vehicle.id}`}
+                                target="_blank"
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                Open Listing
+                              </Link>
+                            ) : (
+                              <span className="flex items-center opacity-50 cursor-not-allowed px-2 py-1.5 text-sm">
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                Open Listing
+                              </span>
+                            )}
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => openGenerator(vehicle, "FACEBOOK")}>
                             <Facebook className="mr-2 h-4 w-4 text-[#1877F2]" />
-                            Generate Facebook Post
+                            Facebook Template
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openGenerator(vehicle, "CRAIGSLIST")}>
                             <FileText className="mr-2 h-4 w-4 text-purple-600" />
-                            Generate Craigslist Listing
+                            Craigslist Template
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openGenerator(vehicle, "GENERIC")}>
+                            <Type className="mr-2 h-4 w-4 text-gray-600" />
+                            Generic Template
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openGenerator(vehicle, "EMAIL")}>
                             <Mail className="mr-2 h-4 w-4 text-red-500" />
-                            Generate Email Listing
+                            Email Template
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -293,23 +326,42 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleStatusChange(vehicle.id, "ARCHIVED")}>
                               <EyeOff className="mr-2 h-4 w-4" />
-                              Hide Listing
+                              Unpublish & Archive
                             </DropdownMenuItem>
                           </>
                         )}
 
                         {vehicle.vehicleStatus === "ARCHIVED" && (
-                          <DropdownMenuItem onClick={() => handleStatusChange(vehicle.id, "LISTED")}>
+                          <DropdownMenuItem onClick={() => handleStatusChange(vehicle.id, "UNPUBLISHED")}>
                             <ExternalLink className="mr-2 h-4 w-4" />
-                            Re-Publish
+                            Restore to Unpublished
                           </DropdownMenuItem>
                         )}
 
                         {vehicle.vehicleStatus === "DRAFT" && (
-                          <DropdownMenuItem onClick={() => handleStatusChange(vehicle.id, "LISTED")}>
+                          <DropdownMenuItem 
+                            disabled={!computeVehicleReadiness(vehicle).isReadyForUnpublished}
+                            onClick={() => handleStatusChange(vehicle.id, "UNPUBLISHED")}
+                          >
                             <ExternalLink className="mr-2 h-4 w-4" />
-                            Publish to Showroom
+                            Move to Unpublished
                           </DropdownMenuItem>
+                        )}
+
+                        {vehicle.vehicleStatus === "UNPUBLISHED" && (
+                          <>
+                            <DropdownMenuItem 
+                              disabled={!computeVehicleReadiness(vehicle).isReadyForPublished}
+                              onClick={() => handleStatusChange(vehicle.id, "LISTED")}
+                            >
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Publish to showroom
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleStatusChange(vehicle.id, "DRAFT")}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Demote to Draft
+                            </DropdownMenuItem>
+                          </>
                         )}
 
                         <DropdownMenuSeparator />
@@ -341,6 +393,113 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
         isOpen={!!activeVehicle}
         onClose={() => setActiveVehicle(null)}
       />
+    </div>
+  );
+}
+
+function NextActionCell({ 
+  vehicle, 
+  onStatusChange 
+}: { 
+  vehicle: SerializedVehicleWithMedia; 
+  onStatusChange: (id: string, status: VehicleStatus) => void 
+}) {
+  const readiness = computeVehicleReadiness(vehicle);
+  
+  if (vehicle.vehicleStatus === "DRAFT") {
+    if (readiness.isReadyForUnpublished) {
+      return (
+        <Button 
+          size="sm" 
+          variant="outline" 
+          className="h-7 text-[10px] font-bold uppercase tracking-wider border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700"
+          onClick={() => onStatusChange(vehicle.id, "UNPUBLISHED")}
+        >
+          Move to Unpublished
+          <ArrowRight className="ml-1 h-3 w-3" />
+        </Button>
+      );
+    }
+    return (
+      <Button asChild size="sm" variant="ghost" className="h-7 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Link href={`/admin/inventory/${vehicle.id}/edit`}>
+          Complete Details
+        </Link>
+      </Button>
+    );
+  }
+
+  if (vehicle.vehicleStatus === "UNPUBLISHED") {
+    if (readiness.isReadyForPublished) {
+      return (
+        <Button 
+          size="sm" 
+          className="h-7 text-[10px] font-bold uppercase tracking-wider"
+          onClick={() => onStatusChange(vehicle.id, "LISTED")}
+        >
+          Publish to Showroom
+          <ExternalLink className="ml-1 h-3 w-3" />
+        </Button>
+      );
+    }
+    return (
+      <Button asChild size="sm" variant="ghost" className="h-7 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <Link href={`/admin/inventory/${vehicle.id}/edit`}>
+          Fix Issues to Publish
+        </Link>
+      </Button>
+    );
+  }
+
+  if (vehicle.vehicleStatus === "LISTED") {
+    return (
+      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-600">
+        <CheckCircle2 className="h-3 w-3" />
+        Live on Site
+      </div>
+    );
+  }
+
+  return <span className="text-[10px] text-muted-foreground italic">—</span>;
+}
+
+function ReadinessIndicator({ vehicle }: { vehicle: SerializedVehicleWithMedia }) {
+  const readiness = computeVehicleReadiness(vehicle);
+  
+  const allBlocking = [...readiness.blockingUnpublished, ...readiness.blockingPublished];
+  const hasBlocking = allBlocking.length > 0;
+  const hasWarnings = readiness.warnings.length > 0;
+
+  if (!hasBlocking && !hasWarnings) {
+    return (
+      <div className="flex items-center gap-1 text-green-600" title="Ready for Showroom">
+        <CheckCircle className="h-4 w-4" />
+        <span className="text-xs font-medium">Ready</span>
+      </div>
+    );
+  }
+
+  const tooltipText = [
+    readiness.blockingUnpublished.length > 0 ? `Required for Unpublished: ${readiness.blockingUnpublished.map(i => i.message).join(", ")}` : "",
+    readiness.blockingPublished.length > 0 ? `Required for Showroom: ${readiness.blockingPublished.map(i => i.message).join(", ")}` : "",
+    readiness.warnings.length > 0 ? `Recommended: ${readiness.warnings.map(i => i.message).join(", ")}` : ""
+  ].filter(Boolean).join("\n");
+
+  return (
+    <div 
+      className={cn(
+        "flex items-center gap-1 cursor-help",
+        hasBlocking ? "text-amber-600" : "text-blue-600"
+      )}
+      title={tooltipText}
+    >
+      <AlertCircle className={cn("h-4 w-4", !hasBlocking && "text-blue-500")} />
+      <span className="text-xs font-medium">
+        {hasBlocking 
+          ? `${allBlocking.length} issue${allBlocking.length === 1 ? "" : "s"}`
+          : `${readiness.warnings.length} warning${readiness.warnings.length === 1 ? "" : "s"}`
+        }
+      </span>
     </div>
   );
 }

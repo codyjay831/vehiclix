@@ -136,50 +136,57 @@ model PasswordResetToken {
 }
 
 model Vehicle {
-  id                   String             @id @default(uuid())
-  vin                  String             @unique
-  year                 Int
-  make                 String
-  model                String
-  trim                 String?
-  bodyStyle            String?
-  fuelType             String?
-  transmission         String?
-  doors                Int?
-  mileage              Int
-  drivetrain           Drivetrain
-  batteryRangeEstimate Int?
-  batteryCapacityKWh   Float?
-  batteryChemistry     String?
-  chargingStandard     String?
-  exteriorColor        String
-  interiorColor        String
-  titleStatus          TitleStatus
-  price                Decimal            @db.Decimal(12, 2)
-  description          String?
-  highlights           String[]
-  features             String[]
-  internalNotes        String?
-  vehicleStatus        VehicleStatus      @default(DRAFT)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  condition            InventoryCondition
-  /** Dealer condition / history notes (optional); not marketing copy. */
-  conditionNotes       String?
-  /** Phase 2C: last-known intake field sources (decoder / ai); support & debug only. */
+  id                    String                @id @default(uuid())
+  vin                   String                @unique
+  year                  Int
+  make                  String
+  model                 String
+  trim                  String?
+  bodyStyle             String?
+  fuelType              String?
+  transmission          String?
+  doors                 Int?
+  mileage               Int
+  drivetrain            Drivetrain
+  batteryRangeEstimate  Int?
+  batteryCapacityKWh    Float?
+  batteryChemistry      String?
+  chargingStandard      String?
+  exteriorColor         String
+  interiorColor         String
+  titleStatus           TitleStatus
+  price                 Decimal               @db.Decimal(12, 2)
+  description           String?
+  highlights            String[]
+  features              String[]
+  internalNotes         String?
+  vehicleStatus         VehicleStatus         @default(DRAFT)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  condition             InventoryCondition
+  /**
+   * Dealer condition / history notes (optional); not marketing copy.
+   */
+  conditionNotes        String?
+  /**
+   * Phase 2C: last-known intake field sources (decoder / ai); support & debug only.
+   */
   intakeFieldProvenance Json?
-  organizationId       String
-  /** Public identity for catalog/VDP; unique per organization. Backfilled for existing rows. */
-  slug                 String?
-  shares               Int                @default(0)
-  views                Int                @default(0)
-  deals                Deal[]
-  leads                Lead[]
-  tradeInCaptures      TradeInCapture[]
-  organization         Organization       @relation(fields: [organizationId], references: [id])
-  documents            VehicleDocument[]
-  inquiries            VehicleInquiry[]
-  media                VehicleMedia[]
+  organizationId        String
+  /**
+   * Public identity for catalog/VDP; unique per organization. Backfilled for existing rows.
+   */
+  slug                  String?
+  shares                Int                   @default(0)
+  views                 Int                   @default(0)
+  deals                 Deal[]
+  leads                 Lead[]
+  tradeInCaptures       TradeInCapture[]
+  organization          Organization          @relation(fields: [organizationId], references: [id])
+  documents             VehicleDocument[]
+  inquiries             VehicleInquiry[]
+  media                 VehicleMedia[]
+  listingDrafts         VehicleListingDraft[]
 
   @@unique([organizationId, slug])
   @@index([vehicleStatus])
@@ -190,18 +197,42 @@ model VehicleMedia {
   id           String    @id @default(uuid())
   vehicleId    String
   mediaType    MediaType
-  /** Legacy canonical key / URL; new uploads mirror gallery. */
+  /**
+   * Legacy canonical key / URL; new uploads mirror gallery.
+   */
   url          String
-  /** Optimized thumbnail (~400px); nullable for legacy rows. */
+  /**
+   * Optimized thumbnail (~400px); nullable for legacy rows.
+   */
   thumbUrl     String?
-  /** Card / list size (~800px); nullable for legacy rows. */
+  /**
+   * Card / list size (~800px); nullable for legacy rows.
+   */
   cardUrl      String?
-  /** Main VDP / gallery size (~1920px); nullable for legacy rows. */
+  /**
+   * Main VDP / gallery size (~1920px); nullable for legacy rows.
+   */
   galleryUrl   String?
   displayOrder Int
   createdAt    DateTime  @default(now())
   vehicle      Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
+  @@index([vehicleId])
+}
+
+model VehicleListingDraft {
+  id        String   @id @default(uuid())
+  vehicleId String
+  channel   String /** e.g. "FACEBOOK", "CRAIGSLIST", "EMAIL", "GENERIC" */
+  title     String?  @db.Text
+  body      String   @db.Text
+  tone      String? /** e.g. "Professional", "Casual", "Aggressive" */
+  length    String? /** e.g. "Short", "Medium", "Long" */
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, channel])
   @@index([vehicleId])
 }
 
@@ -545,6 +576,7 @@ enum InviteStatus {
 
 enum VehicleStatus {
   DRAFT
+  UNPUBLISHED
   LISTED
   RESERVED
   UNDER_CONTRACT

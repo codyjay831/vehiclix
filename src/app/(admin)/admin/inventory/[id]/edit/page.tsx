@@ -4,6 +4,7 @@ import { getVehicleForEdit } from "@/lib/inventory";
 import { VehicleForm } from "@/components/admin/VehicleForm";
 import { VehicleStatus } from "@prisma/client";
 import { requireUserWithOrg } from "@/lib/auth";
+import { serializeVehicle } from "@/lib/vehicle-serialization";
 
 interface EditVehiclePageProps {
   params: Promise<{ id: string }>;
@@ -20,11 +21,8 @@ export default async function AdminEditVehiclePage({ params }: EditVehiclePagePr
     notFound();
   }
 
-  // Serialize Decimal objects for Client Component serialization
-  const serializedVehicle = {
-    ...vehicle,
-    price: Number(vehicle.price)
-  };
+  // Serialize Decimal objects and Dates for Client Component serialization
+  const serializedVehicle = serializeVehicle(vehicle);
 
   if (LOCKED_STATUSES.includes(vehicle.vehicleStatus)) {
     // Redirect with error info (though layout doesn't catch query params for toast yet,

@@ -15,6 +15,7 @@ import {
   DRIVETRAIN_LABELS,
   INVENTORY_CONDITION_LABELS,
   TITLE_STATUS_LABELS,
+  SerializedVehicleWithMedia,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { createVehicleAction, isVinUnique, updateVehicleAction } from "@/actions/inventory";
+import { createVehicleAction, isVinUnique, updateVehicleAction, updateVehicleStatusAction } from "@/actions/inventory";
 import {
   deleteVehicleMediaAction,
   makePrimaryVehicleMediaAction,
@@ -60,6 +61,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
+  ArrowRight,
 } from "lucide-react";
 import { decodeVin, type VinMetadata } from "@/lib/vin";
 import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
@@ -80,6 +82,7 @@ import {
   type IntakeFieldProvenanceV1,
 } from "@/lib/intake-field-provenance";
 import { Badge } from "@/components/ui/badge";
+import type { VehicleWithMedia } from "@/types";
 import type { VehicleIntakeAiMeta, VehicleIntakeAiSuggestions } from "@/types/vehicle-intake-ai";
 import {
   Dialog,
@@ -99,11 +102,12 @@ import {
   INTAKE_PLACEHOLDER_PRICE,
   isIntakePlaceholderPriceValue,
 } from "@/lib/intake-draft-placeholders";
+import { computeVehicleReadiness } from "@/lib/vehicle-readiness";
 
 function initialFormListingPrice(
   initialData: { vehicleStatus?: string; intakeFieldProvenance?: unknown; price?: unknown } | undefined
 ): number | "" {
-  if (!initialData) return "";
+  if (!initialData || initialData.price === undefined || initialData.price === null) return "";
   const prov = parseIntakeFieldProvenanceJson(initialData.intakeFieldProvenance ?? null);
   const unset =
     initialData.vehicleStatus === "DRAFT" &&
@@ -318,7 +322,7 @@ const vehicleSchema = z.object({
 });
 
 interface VehicleFormProps {
-  initialData?: any; // The full vehicle object if editing
+  initialData?: SerializedVehicleWithMedia; // The serialized vehicle object if editing
   isEdit?: boolean;
 }
 
@@ -372,6 +376,9 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     aiMeta: VehicleIntakeAiMeta;
     documentId?: string;
   } | null>(null);
+
+  const [showReadinessPrompt, setShowReadinessPrompt] = React.useState(false);
+  const [isTransitioning, setIsTransitioning] = React.useState(false);
 
   const intakeProvenanceRef = React.useRef<IntakeFieldProvenanceV1 | null>(
     parseIntakeFieldProvenanceJson(initialData?.intakeFieldProvenance ?? null)
@@ -1199,6 +1206,22 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
     }
   };
 
+  const handleMoveToUnpublished = async () => {
+    if (!initialData?.id) return;
+    setIsTransitioning(true);
+    try {
+      await updateVehicleStatusAction(initialData.id, "UNPUBLISHED");
+      toast.success("Vehicle moved to Unpublished");
+      setShowReadinessPrompt(false);
+      router.refresh();
+      router.push("/admin/inventory");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update status");
+    } finally {
+      setIsTransitioning(false);
+    }
+  };
+
   const onSubmit = async (values: VehicleFormValues, status?: VehicleStatus) => {
     setIsSubmitting(true);
     try {
@@ -1250,21 +1273,7 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         return;
       }
 
-      if (!isEdit) {
-        // 2. Additional Publish Validation (Only for Creation)
-        if (status === "LISTED") {
-          if (!valuesForSave.description) {
-            form.setError("description", { message: "Description is required to publish" });
-            setIsSubmitting(false);
-            return;
-          }
-          if (photos.length === 0) {
-            toast.error("At least one photo is required to publish");
-            setIsSubmitting(false);
-            return;
-          }
-        }
-      }
+      // Create flow: only DRAFT or UNPUBLISHED (publish to site is inventory → UNPUBLISHED → LISTED).
 
       // Vehicle listing photos only: same path for create + edit. Intake PDFs/images use
       // `handleIntakeDocumentSelected` → `processVehicleIntakeDocumentAction` (separate FormData, never this helper).
@@ -1302,8 +1311,15 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
         }
 
         await createVehicleAction(formData);
-        toast.success(status === "LISTED" ? "Vehicle published successfully" : "Vehicle saved as draft");
+        toast.success(
+          status === "UNPUBLISHED" ? "Vehicle saved as unpublished" : "Vehicle saved as draft"
+        );
       } else {
+        if (!initialData?.id) {
+          toast.error("Edit failed: vehicle context is missing");
+          return;
+        }
+
         // 3. Submit Update (Field only)
         const formData = new FormData();
         Object.entries(valuesForSave).forEach(([key, value]) => {
@@ -1332,6 +1348,40 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           return;
         }
         toast.success("Vehicle updated successfully");
+
+        // Check readiness for DRAFT to prompt for UNPUBLISHED
+        if (initialData.vehicleStatus === "DRAFT") {
+          // Construct a mock of the updated vehicle to check readiness
+          const updatedMock: VehicleWithMedia = {
+            ...initialData,
+            ...valuesForSave,
+            // Convert price to Decimal for computation helper
+            price: new (require("@prisma/client").Prisma.Decimal)(valuesForSave.price),
+            // Combine existing media with newly uploaded count
+            media: [
+              ...existingSavedMedia,
+              ...photosToUpload.map((_, i) => ({
+                id: `pending-${i}`,
+                mediaType: "IMAGE" as const,
+                url: "",
+                thumbUrl: "",
+                cardUrl: "",
+                galleryUrl: "",
+                displayOrder: 0,
+                createdAt: new Date(),
+                vehicleId: initialData.id,
+              })),
+            ],
+          } as any;
+
+          const readiness = computeVehicleReadiness(updatedMock);
+          if (readiness.isReadyForUnpublished) {
+            setShowReadinessPrompt(true);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
         router.refresh();
         router.push(`/admin/inventory/${initialData.id}/edit`);
       }
@@ -3179,6 +3229,39 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={showReadinessPrompt} onOpenChange={setShowReadinessPrompt}>
+          <DialogContent className="sm:max-w-md" showCloseButton>
+            <DialogHeader>
+              <DialogTitle>Mark as ready for review?</DialogTitle>
+              <DialogDescription>
+                This vehicle looks complete enough to move out of Draft. Unpublished vehicles aren&apos;t shown on your public site, but they&apos;re treated as ready for listing copy and final checks. Move to Unpublished, or stay in Draft to keep working?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-end border-0 bg-transparent p-0 pt-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => {
+                  setShowReadinessPrompt(false);
+                  router.refresh();
+                  router.push(`/admin/inventory/${initialData?.id}/edit`);
+                }}
+                disabled={isTransitioning}
+              >
+                Stay in Draft
+              </Button>
+              <Button
+                type="button"
+                onClick={handleMoveToUnpublished}
+                disabled={isTransitioning}
+              >
+                {isTransitioning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Move to Unpublished
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Sticky Bottom Bar */}
         <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-background/80 backdrop-blur-sm border-t p-4 z-20 shadow-lg">
           <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
@@ -3207,11 +3290,11 @@ export function VehicleForm({ initialData, isEdit = false }: VehicleFormProps) {
                   </Button>
                   <Button
                     type="button"
-                    onClick={form.handleSubmit((v) => onSubmit(v, "LISTED"))}
+                    onClick={form.handleSubmit((v) => onSubmit(v, "UNPUBLISHED"))}
                     disabled={isSubmitting}
                   >
                     {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Publish Vehicle
+                    Save as Unpublished
                   </Button>
                 </>
               ) : (
