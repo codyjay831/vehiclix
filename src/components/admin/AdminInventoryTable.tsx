@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type } from "lucide-react";
+import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type, Trash2 } from "lucide-react";
 import {
   VehicleStatus,
   VEHICLE_STATUS_LABELS,
 } from "@/types";
 import { SerializedVehicleWithMedia } from "@/lib/vehicle-serialization";
 import { ListingGeneratorModal, GeneratorType } from "./ListingGeneratorModal";
+import { DeleteVehicleDialog } from "./DeleteVehicleDialog";
 import { trackVehicleShareAction, updateVehicleStatusAction } from "@/actions/inventory";
 import {
   Table,
@@ -72,11 +73,17 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
   const [isPending, startTransition] = React.useTransition();
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [activeVehicle, setActiveVehicle] = React.useState<SerializedVehicleWithMedia | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [generatorType, setGeneratorType] = React.useState<GeneratorType>("FACEBOOK");
 
   const openGenerator = (vehicle: SerializedVehicleWithMedia, type: GeneratorType) => {
     setActiveVehicle(vehicle);
     setGeneratorType(type);
+  };
+
+  const openDeleteDialog = (vehicle: SerializedVehicleWithMedia) => {
+    setActiveVehicle(vehicle);
+    setIsDeleteDialogOpen(true);
   };
 
   const handleStatusChange = (vehicleId: string, newStatus: VehicleStatus) => {
@@ -371,6 +378,15 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                             Status Locked by Deal
                           </DropdownMenuItem>
                         )}
+
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                          className="text-destructive font-bold hover:bg-destructive/10"
+                          onClick={() => openDeleteDialog(vehicle)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Vehicle
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -390,8 +406,20 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
       <ListingGeneratorModal
         vehicle={activeVehicle}
         type={generatorType}
-        isOpen={!!activeVehicle}
+        isOpen={!!activeVehicle && !isDeleteDialogOpen}
         onClose={() => setActiveVehicle(null)}
+      />
+
+      <DeleteVehicleDialog
+        vehicle={activeVehicle}
+        isOpen={isDeleteDialogOpen}
+        onClose={() => {
+          setIsDeleteDialogOpen(false);
+          setActiveVehicle(null);
+        }}
+        onSuccess={() => {
+          // Re-fetch handled by server actions
+        }}
       />
     </div>
   );

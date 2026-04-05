@@ -107,7 +107,7 @@ export function buildVehicleInventorySelect(mediaTake?: number) {
         updatedAt: true,
       },
     },
-    _count: { select: { inquiries: true } },
+    _count: { select: { inquiries: true, deals: true, leads: true, tradeInCaptures: true } },
   } satisfies Prisma.VehicleSelect;
 }
 

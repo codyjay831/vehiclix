@@ -14,6 +14,7 @@ import { VehicleStatus, Prisma, Role, MediaType } from "@prisma/client";
 import { deleteFile, saveBuffer } from "@/lib/storage";
 import { generateVehicleImageVariants } from "@/lib/images/vehicle-image-pipeline";
 
+import { deleteStoredVehicleMediaFiles } from "@/lib/vehicle-media-storage";
 import { logAuditEvent } from "@/lib/audit";
 import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
@@ -636,6 +637,148 @@ export async function updateVehicleStatusAction(vehicleId: string, newStatus: Ve
   revalidatePath(`/${orgSlug}/inventory/${publicId}`);
   revalidatePath(`/${orgSlug}/inventory`);
   revalidatePath(`/${orgSlug}`);
+}
+
+/**
+ * Production-safe delete flow:
+ * 1. Checks if the vehicle has any critical dependencies (deals, leads, etc.).
+ * 2. If dependencies exist, only ARCHIVE is allowed.
+ * 3. If no dependencies exist and the status is DRAFT/UNPUBLISHED, allows PERMANENT delete.
+ * 4. Permanent delete handles media cleanup from storage.
+ */
+export async function deleteVehicleAction(
+  vehicleId: string,
+  mode: "ARCHIVE" | "PERMANENT"
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireWriteAccess();
+    const user = await requireUserWithOrg();
+    if (user.role !== Role.OWNER && user.role !== Role.STAFF && !user.isSupportMode) {
+      return { ok: false, error: "Unauthorized" };
+    }
+
+    const vehicle = await db.vehicle.findFirst({
+      where: { id: vehicleId, organizationId: user.organizationId },
+      include: {
+        organization: { select: { slug: true } },
+        media: true,
+        _count: {
+          select: {
+            deals: true,
+            leads: true,
+            tradeInCaptures: true,
+            inquiries: true,
+          },
+        },
+      },
+    });
+
+    if (!vehicle) {
+      return { ok: false, error: "Vehicle not found" };
+    }
+
+    const hasDependencies = 
+      vehicle._count.deals > 0 || 
+      vehicle._count.leads > 0 || 
+      vehicle._count.tradeInCaptures > 0 || 
+      vehicle._count.inquiries > 0;
+
+    if (mode === "PERMANENT") {
+      if (hasDependencies) {
+        return { 
+          ok: false, 
+          error: "This vehicle has associated records (leads, deals, or inquiries) and cannot be permanently deleted. Please archive it instead." 
+        };
+      }
+
+      // Final safety guard: only allow permanent delete for DRAFT, UNPUBLISHED, or ARCHIVED.
+      // LISTED, SOLD, RESERVED, etc. should be ARCHIVED first or are too critical to hard delete.
+      const safeForPermanent = ["DRAFT", "UNPUBLISHED", "ARCHIVED"].includes(vehicle.vehicleStatus);
+      if (!safeForPermanent) {
+        return {
+          ok: false,
+          error: `Vehicles in ${vehicle.vehicleStatus} status must be Archived before they can be permanently deleted.`,
+        };
+      }
+
+      // Hard Delete with Media Cleanup
+      await db.$transaction(async (tx) => {
+        // Media cleanup (collect metadata before deleting rows)
+        const mediaRows = vehicle.media;
+
+        // Perform DB delete (CASCADE handles related documents/media/drafts rows)
+        await tx.vehicle.delete({
+          where: { id: vehicleId },
+        });
+
+        // Audit Log
+        await logAuditEvent({
+          eventType: "vehicle.deleted_permanently",
+          entityType: "Vehicle",
+          entityId: vehicleId,
+          organizationId: user.organizationId,
+          actorId: user.id,
+          actorRole: user.role,
+          metadata: { 
+            vin: vehicle.vin, 
+            year: vehicle.year, 
+            make: vehicle.make, 
+            model: vehicle.model,
+            statusWas: vehicle.vehicleStatus
+          },
+        });
+
+        // Cleanup storage after successful DB transaction
+        // (If storage cleanup fails, it's just orphans, better than failing the whole delete)
+        after(async () => {
+          for (const media of mediaRows) {
+            await deleteStoredVehicleMediaFiles(media).catch((e) => {
+              console.warn(`Failed to cleanup media storage for vehicle ${vehicleId}:`, e);
+            });
+          }
+        });
+      });
+    } else {
+      // Archive (Soft Delete)
+      if (vehicle.vehicleStatus === "ARCHIVED") {
+        return { ok: true }; // Already archived
+      }
+
+      await db.vehicle.update({
+        where: { id: vehicleId },
+        data: { vehicleStatus: "ARCHIVED" },
+      });
+
+      await logAuditEvent({
+        eventType: "vehicle.archived",
+        entityType: "Vehicle",
+        entityId: vehicleId,
+        organizationId: user.organizationId,
+        actorId: user.id,
+        actorRole: user.role,
+        metadata: { from: vehicle.vehicleStatus },
+      });
+    }
+
+    // Revalidate everything
+    const orgSlug = vehicle.organization.slug;
+    const publicId = vehicle.slug || vehicleId;
+    
+    after(() => {
+      revalidatePath("/admin/inventory");
+      revalidatePath(`/admin/inventory/${vehicleId}`);
+      revalidatePath(`/admin/inventory/${vehicleId}/edit`);
+      revalidatePath(`/${orgSlug}/inventory/${publicId}`);
+      revalidatePath(`/${orgSlug}/inventory`);
+      revalidatePath(`/${orgSlug}`);
+    });
+
+    return { ok: true };
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error("deleteVehicleAction error:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Deletion failed" };
+  }
 }
 
 /**

@@ -23,6 +23,7 @@ import { VEHICLE_STATUS_LABELS } from "@/types";
 import { DistributionPanel } from "@/components/admin/DistributionPanel";
 import { ListingWorkflowPanel } from "@/components/admin/ListingWorkflowPanel";
 import { ListingCopyPanel } from "@/components/admin/ListingCopyPanel";
+import { DeleteVehicleHeaderAction } from "@/components/admin/DeleteVehicleHeaderAction";
 import { serializeVehicle } from "@/lib/vehicle-serialization";
 import { computeVehicleReadiness } from "@/lib/vehicle-readiness";
 import { cn } from "@/lib/utils";
@@ -106,6 +107,8 @@ export default async function AdminVehicleDetailPage({ params }: AdminVehiclePag
               Public View
             </Button>
           )}
+          <div className="h-8 w-[1px] bg-border hidden md:block" />
+          <DeleteVehicleHeaderAction vehicle={serializedVehicle} />
         </div>
       </div>
 
