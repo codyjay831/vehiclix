@@ -127,7 +127,7 @@ export async function updateHomepageAction(rawData: unknown) {
   // 6. Revalidate only the dealer homepage
   revalidatePath(`/${org.slug}`);
   // Also revalidate admin settings where the form lives
-  revalidatePath("/admin/settings/homepage");
+  revalidatePath("/admin/settings/storefront");
 
   return { success: true, homepage };
 }

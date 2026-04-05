@@ -62,6 +62,11 @@ export default async function DealerLayout({
 
   const { branding, homepage } = dealerDtoToTenantBrandingHomepage(dealer);
 
+  // Guard: Fully Disabled mode blocks all public routes under this slug
+  if (branding?.publicSiteMode === "DISABLED") {
+    return notFound();
+  }
+
   const tenant = {
     id: dealer.id,
     name: dealer.name,

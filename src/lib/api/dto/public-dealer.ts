@@ -6,8 +6,11 @@
 import { getCanonicalUrl } from "@/lib/organization";
 import type { ResolvedDealer } from "@/lib/api/resolve-dealer";
 
+import { PublicSiteMode } from "@prisma/client";
+
 /** Public branding fields only (no internal keys). */
 export interface PublicDealerBranding {
+  publicSiteMode: PublicSiteMode;
   logoUrl: string | null;
   primaryColor: string | null;
   heroHeadline: string | null;
@@ -67,6 +70,7 @@ export function toPublicDealerDto(organization: NonNullable<ResolvedDealer>): Pu
     phone: organization.phone ?? null,
     branding: organization.branding
       ? {
+          publicSiteMode: organization.branding.publicSiteMode,
           logoUrl: organization.branding.logoUrl ?? null,
           primaryColor: organization.branding.primaryColor ?? null,
           heroHeadline: organization.branding.heroHeadline ?? null,

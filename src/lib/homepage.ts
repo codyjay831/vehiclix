@@ -36,17 +36,17 @@ export function getSafeHomepage(
     promoText: h?.promoText || "",
     
     // Hero Section
-    heroHeadline: h?.heroHeadline || b?.heroHeadline || `Experience Electric Excellence.`,
-    heroSubheadline: h?.heroSubheadline || b?.heroSubheadline || "A highly-curated showroom of high-performance electric vehicles. Transparent specs, premium media, and home energy integration — redefining the used EV journey.",
-    heroPrimaryCtaLabel: h?.heroPrimaryCtaLabel || "Browse Showroom",
+    heroHeadline: h?.heroHeadline || b?.heroHeadline || `Welcome to ${organizationName}`,
+    heroSubheadline: h?.heroSubheadline || b?.heroSubheadline || "Browse our inventory, explore vehicle details, and get in touch — all in one place.",
+    heroPrimaryCtaLabel: h?.heroPrimaryCtaLabel || "View Inventory",
     heroPrimaryCtaRoute: (h?.heroPrimaryCtaRoute as ValidCtaRoute) || HOMEPAGE_DEFAULTS.heroPrimaryCtaRoute,
     
     // Trust Highlights
     showTrustHighlights: h?.showTrustHighlights ?? HOMEPAGE_DEFAULTS.showTrustHighlights,
     trustHighlights: (h?.trustHighlightsJson as unknown as TrustHighlight[]) || [
-      { icon: "ShieldCheck", title: "Curated Selection", description: "Every vehicle is thoroughly inspected." },
-      { icon: "Zap", title: "Verified Battery Health", description: "Detailed range and health reports." },
-      { icon: "ShieldCheck", title: "Transparent Pricing", description: "No hidden fees, ever." },
+      { icon: "ShieldCheck", title: "Quality Inspected", description: "Every vehicle is thoroughly reviewed." },
+      { icon: "Zap", title: "Transparent Details", description: "Full specs and vehicle history available." },
+      { icon: "ShieldCheck", title: "No Hidden Fees", description: "Honest, upfront pricing." },
     ],
     
     // Featured Inventory
@@ -59,11 +59,11 @@ export function getSafeHomepage(
     
     // About Teaser
     showAboutTeaser: h?.showAboutTeaser ?? HOMEPAGE_DEFAULTS.showAboutTeaser,
-    aboutTeaser: h?.aboutTeaser || b?.aboutBlurb || `Welcome to ${organizationName}. We are committed to providing the best electric vehicle experience.`,
+    aboutTeaser: h?.aboutTeaser || b?.aboutBlurb || `Welcome to ${organizationName}. We're here to help you find the right vehicle.`,
     
     // Contact/Service CTA
     showContactCta: h?.showContactCta ?? HOMEPAGE_DEFAULTS.showContactCta,
-    contactCtaHeadline: h?.contactCtaHeadline || "Ready to drive?",
-    contactCtaBody: h?.contactCtaBody || "Contact us to schedule a test drive or learn more about our EVs.",
+    contactCtaHeadline: h?.contactCtaHeadline || "Ready to get started?",
+    contactCtaBody: h?.contactCtaBody || "Get in touch to schedule a visit or learn more about our inventory.",
   };
 }

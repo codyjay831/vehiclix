@@ -7,7 +7,7 @@ import { Testimonial } from "@/components/public/Testimonial";
 import { AboutTeaser } from "@/components/public/AboutTeaser";
 import { ContactCTA } from "@/components/public/ContactCTA";
 import { getSafeHomepage } from "@/lib/homepage";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Metadata } from "next";
 
 interface DealerHomePageProps {
@@ -28,19 +28,25 @@ export async function generateMetadata({ params }: DealerHomePageProps): Promise
   }
 
   const { branding, homepage } = dealerDtoToTenantBrandingHomepage(dealer);
+
+  // Guard: Inventory Only mode redirects visitors to the inventory page
+  if (branding?.publicSiteMode === "INVENTORY_ONLY") {
+    redirect(`/${dealerSlug}/inventory`);
+  }
+
   const safeHome = getSafeHomepage(homepage, branding, dealer.name);
   const dealerName = dealer.name;
   const canonical = dealer.canonicalBaseUrl;
 
   return {
     title: "Home",
-    description: safeHome.heroSubheadline || `Welcome to ${dealerName}. Explore our curated selection of premium electric vehicles and discover our commitment to the future of mobility.`,
+    description: safeHome.heroSubheadline || `Welcome to ${dealerName}. Browse our inventory, explore vehicle details, and get in touch.`,
     alternates: {
       canonical: canonical,
     },
     openGraph: {
-      title: safeHome.heroHeadline || `${dealerName} | Boutique EV Showroom`,
-      description: safeHome.heroSubheadline || `Boutique electric vehicle dealership. Explore curated EVs at ${dealerName}.`,
+      title: safeHome.heroHeadline || dealerName,
+      description: safeHome.heroSubheadline || `Browse the inventory at ${dealerName}.`,
       url: canonical,
       type: "website",
     },
@@ -54,6 +60,11 @@ export default async function DealerHomePage({ params }: DealerHomePageProps) {
 
   if (!dealer) {
     return notFound();
+  }
+
+  // Guard: Inventory Only mode redirects visitors to the inventory page
+  if (dealer.branding?.publicSiteMode === "INVENTORY_ONLY") {
+    redirect(`/${dealerSlug}/inventory`);
   }
 
   const catalogItems = await fetchStorefrontPublicCatalog(dealerSlug, {});

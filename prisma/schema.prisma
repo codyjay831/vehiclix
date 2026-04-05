@@ -61,11 +61,18 @@ model OrganizationHomepage {
   organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
+enum PublicSiteMode {
+  FULL_STOREFRONT
+  INVENTORY_ONLY
+  DISABLED
+}
+
 model OrganizationBranding {
-  id              String       @id @default(uuid())
-  organizationId  String       @unique
+  id              String         @id @default(uuid())
+  organizationId  String         @unique
+  publicSiteMode  PublicSiteMode @default(FULL_STOREFRONT)
   logoUrl         String?
-  primaryColor    String?      @default("#1A1A1A")
+  primaryColor    String?        @default("#1A1A1A")
   heroHeadline    String?
   heroSubheadline String?
   aboutBlurb      String?
@@ -73,9 +80,9 @@ model OrganizationBranding {
   contactPhone    String?
   address         String?
   socialImageUrl  String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model OrganizationDomain {

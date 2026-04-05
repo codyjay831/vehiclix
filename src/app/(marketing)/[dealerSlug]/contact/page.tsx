@@ -36,7 +36,7 @@ export default async function ContactPage({ params }: ContactPageProps) {
   const { dealerSlug } = await params;
   const org = await getOrganizationBySlug(dealerSlug);
 
-  if (!org) {
+  if (!org || org.branding?.publicSiteMode === "INVENTORY_ONLY") {
     return notFound();
   }
 

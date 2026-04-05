@@ -27,8 +27,10 @@ export default async function SettingsLayout({
 
   const org = await db.organization.findUnique({
     where: { id: user.organizationId },
-    select: { slug: true, name: true },
+    select: { slug: true, name: true, branding: { select: { publicSiteMode: true } } },
   });
+
+  const siteMode = org?.branding?.publicSiteMode || "FULL_STOREFRONT";
 
   return (
     <div className="p-4 md:p-8 space-y-8 bg-muted/30 min-h-screen">
@@ -50,11 +52,11 @@ export default async function SettingsLayout({
           </p>
         </div>
         
-        {org?.slug && (
+        {org?.slug && siteMode !== "DISABLED" && (
           <Button asChild variant="outline" className="h-12 px-6 font-bold uppercase tracking-wider italic gap-2 group">
             <Link href={`/${org.slug}`} target="_blank">
               <Globe className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
-              View Storefront
+              {siteMode === "FULL_STOREFRONT" ? "View Storefront" : "View Showroom"}
             </Link>
           </Button>
         )}

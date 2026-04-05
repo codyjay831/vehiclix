@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Palette, Globe, LayoutDashboard, CreditCard, Users } from "lucide-react";
+import { Store, Globe, CreditCard, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function SettingsNav() {
@@ -10,9 +10,9 @@ export function SettingsNav() {
 
   const tabs = [
     {
-      label: "Branding",
-      href: "/admin/settings/branding",
-      icon: Palette,
+      label: "Storefront",
+      href: "/admin/settings/storefront",
+      icon: Store,
     },
     {
       label: "Users",
@@ -23,11 +23,6 @@ export function SettingsNav() {
       label: "Custom Domains",
       href: "/admin/settings/domains",
       icon: Globe,
-    },
-    {
-      label: "Homepage",
-      href: "/admin/settings/homepage",
-      icon: LayoutDashboard,
     },
     {
       label: "Billing",

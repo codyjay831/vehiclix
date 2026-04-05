@@ -10,11 +10,12 @@ import { getAuthenticatedUser, requireUserWithOrg } from "@/lib/auth";
 import { requireWriteAccess } from "@/lib/support";
 import { normalizeSlug, validateOrganizationSlug } from "@/lib/organization";
 import { logAuditEvent } from "@/lib/audit";
-import { Role } from "@prisma/client";
+import { Role, PublicSiteMode } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 const BrandingSchema = z.object({
+  publicSiteMode: z.nativeEnum(PublicSiteMode).optional(),
   logoUrl: z.string().url().optional().or(z.literal("")),
   heroHeadline: z.string().max(200).optional().or(z.literal("")),
   heroSubheadline: z.string().max(1000).optional().or(z.literal("")),
@@ -193,7 +194,7 @@ export async function updateOrganizationBrandingAction(rawData: unknown) {
   revalidatePath(`/${org.slug}/about`);
   revalidatePath(`/${org.slug}/contact`);
   revalidatePath(`/${org.slug}/inventory`);
-  revalidatePath("/admin/settings/branding");
+  revalidatePath("/admin/settings/storefront");
 
   return { success: true, branding };
 }

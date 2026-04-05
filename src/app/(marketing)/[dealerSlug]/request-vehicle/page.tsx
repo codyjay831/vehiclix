@@ -33,7 +33,7 @@ export default async function RequestVehiclePage({ params }: RequestVehiclePageP
   const { dealerSlug } = await params;
   const org = await getOrganizationBySlug(dealerSlug);
 
-  if (!org) {
+  if (!org || org.branding?.publicSiteMode === "INVENTORY_ONLY") {
     return notFound();
   }
 

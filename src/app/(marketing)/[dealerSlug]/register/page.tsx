@@ -26,6 +26,15 @@ export async function generateMetadata({ params }: DealerRegisterPageProps): Pro
   };
 }
 
-export default async function DealerRegisterPage() {
+import { notFound } from "next/navigation";
+
+export default async function DealerRegisterPage({ params }: DealerRegisterPageProps) {
+  const { dealerSlug } = await params;
+  const org = await getOrganizationBySlug(dealerSlug);
+
+  if (!org || org.branding?.publicSiteMode === "INVENTORY_ONLY") {
+    return notFound();
+  }
+
   return <DealerRegisterForm />;
 }

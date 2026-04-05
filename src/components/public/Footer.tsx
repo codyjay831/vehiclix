@@ -53,7 +53,9 @@ export function Footer() {
                 <ul className="space-y-4 text-sm font-bold uppercase tracking-tight">
                   <li><Link href={`/${tenant.slug}/inventory`} className="text-muted-foreground hover:text-primary transition-colors">All Inventory</Link></li>
                   <li><Link href={`/${tenant.slug}/inventory?sort=newest`} className="text-muted-foreground hover:text-primary transition-colors">New Arrivals</Link></li>
-                  <li><Link href={`/${tenant.slug}/request-vehicle`} className="text-muted-foreground hover:text-primary transition-colors">Find My EV</Link></li>
+                  {branding?.publicSiteMode !== "INVENTORY_ONLY" && (
+                    <li><Link href={`/${tenant.slug}/request-vehicle`} className="text-muted-foreground hover:text-primary transition-colors">Find My EV</Link></li>
+                  )}
                 </ul>
               </div>
 
@@ -61,8 +63,12 @@ export function Footer() {
               <div className="space-y-6">
                 <h4 className="text-xs font-black uppercase tracking-widest">Company</h4>
                 <ul className="space-y-4 text-sm font-bold uppercase tracking-tight">
-                  <li><Link href={`/${tenant.slug}/about`} className="text-muted-foreground hover:text-primary transition-colors">About Us</Link></li>
-                  <li><Link href={`/${tenant.slug}/contact`} className="text-muted-foreground hover:text-primary transition-colors">Contact</Link></li>
+                  {branding?.publicSiteMode !== "INVENTORY_ONLY" && (
+                    <>
+                      <li><Link href={`/${tenant.slug}/about`} className="text-muted-foreground hover:text-primary transition-colors">About Us</Link></li>
+                      <li><Link href={`/${tenant.slug}/contact`} className="text-muted-foreground hover:text-primary transition-colors">Contact</Link></li>
+                    </>
+                  )}
                   <li><Link href={storefrontAuthBridgeHref()} className="text-muted-foreground hover:text-primary transition-colors">Customer Portal</Link></li>
                 </ul>
               </div>

@@ -27,11 +27,15 @@ export function Navbar({ userRole }: NavbarProps) {
   const logoHref = tenant ? `/${tenant.slug}` : "/";
 
   // When in a tenant context, links should point to tenant-specific pages
-  const navLinks = tenant ? [
-    { label: "Showroom", href: `/${tenant.slug}/inventory` },
-    { label: "Find My EV", href: `/${tenant.slug}/request-vehicle` },
-    { label: "About", href: `/${tenant.slug}/about` },
-  ] : [
+  const navLinks = tenant ? (
+    branding?.publicSiteMode === "INVENTORY_ONLY" 
+      ? [ { label: "Showroom", href: `/${tenant.slug}/inventory` } ]
+      : [
+          { label: "Showroom", href: `/${tenant.slug}/inventory` },
+          { label: "Find My EV", href: `/${tenant.slug}/request-vehicle` },
+          { label: "About", href: `/${tenant.slug}/about` },
+        ]
+  ) : [
     // Platform links for generic root - keeping it focused on platform features
     { label: "Features", href: "/#features" },
   ];
