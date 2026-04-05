@@ -68,7 +68,7 @@ export function toPublicVehicleCardDto(vehicle: VehicleWithMedia): PublicVehicle
     model: vehicle.model,
     trim: vehicle.trim ?? null,
     price: hasPrice ? pStr : null,
-    pricingMode: hasPrice ? "LIST_PRICE" : "PRICE_ON_REQUEST",
+    pricingMode: hasPrice ? "LIST_PRICE" : "HIDE_PRICE",
     mileage: vehicle.mileage,
     rangeMiles: vehicle.batteryRangeEstimate ?? null,
     condition: vehicle.condition,
