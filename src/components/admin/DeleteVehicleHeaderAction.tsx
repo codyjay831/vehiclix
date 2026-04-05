@@ -12,6 +12,7 @@ interface DeleteVehicleHeaderActionProps {
 
 export function DeleteVehicleHeaderAction({ vehicle }: DeleteVehicleHeaderActionProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = React.useState("");
 
   return (
     <>
@@ -29,6 +30,8 @@ export function DeleteVehicleHeaderAction({ vehicle }: DeleteVehicleHeaderAction
         vehicle={vehicle}
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
+        confirmText={deleteConfirmText}
+        setConfirmText={setDeleteConfirmText}
       />
     </>
   );
