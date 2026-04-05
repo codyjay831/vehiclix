@@ -19,6 +19,8 @@ export type AuditEventType =
   | "vehicle.updated"
   | "vehicle.status_changed"
   | "vehicle.published"
+  | "vehicle.archived"
+  | "vehicle.deleted_permanently"
   | "domain.add"
   | "domain.delete"
   | "domain.verify_success"
