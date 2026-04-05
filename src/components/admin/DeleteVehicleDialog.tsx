@@ -23,7 +23,9 @@ interface DeleteVehicleDialogProps {
   vehicle: SerializedVehicleWithMedia | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (vehicleId: string, mode: "ARCHIVE" | "PERMANENT") => void;
+  confirmText: string;
+  setConfirmText: (text: string) => void;
 }
 
 export function DeleteVehicleDialog({
@@ -31,9 +33,10 @@ export function DeleteVehicleDialog({
   isOpen,
   onClose,
   onSuccess,
+  confirmText,
+  setConfirmText,
 }: DeleteVehicleDialogProps) {
   const router = useRouter();
-  const [confirmText, setConfirmText] = React.useState("");
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [isArchiving, setIsArchiving] = React.useState(false);
 
@@ -53,7 +56,7 @@ export function DeleteVehicleDialog({
       const result = await deleteVehicleAction(vehicle.id, "ARCHIVE");
       if (result.ok) {
         toast.success("Vehicle archived");
-        onSuccess?.();
+        onSuccess?.(vehicle.id, "ARCHIVE");
         onClose();
       } else {
         toast.error(result.error);
@@ -72,7 +75,7 @@ export function DeleteVehicleDialog({
       const result = await deleteVehicleAction(vehicle.id, "PERMANENT");
       if (result.ok) {
         toast.success("Vehicle permanently deleted");
-        onSuccess?.();
+        onSuccess?.(vehicle.id, "PERMANENT");
         onClose();
         // If we're on the detail page, we should redirect to inventory
         if (window.location.pathname.includes(vehicle.id)) {

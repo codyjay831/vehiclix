@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type, Trash2 } from "lucide-react";
+import { MoreHorizontal, Search, Plus, ExternalLink, Copy, Check, Share2, Facebook, Eye, Edit, EyeOff, Archive, CheckCircle2, FileText, Mail, BarChart3, ArrowRight, Type, Trash2, RotateCw } from "lucide-react";
 import {
   VehicleStatus,
   VEHICLE_STATUS_LABELS,
 } from "@/types";
 import { SerializedVehicleWithMedia } from "@/lib/vehicle-serialization";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { ListingGeneratorModal, GeneratorType } from "./ListingGeneratorModal";
 import { DeleteVehicleDialog } from "./DeleteVehicleDialog";
 import { trackVehicleShareAction, updateVehicleStatusAction } from "@/actions/inventory";
@@ -68,13 +69,72 @@ type FilterGroup = "ALL" | "PUBLISHED" | "STAGING" | "DRAFT" | "DEALS" | "SOLD" 
 const LOCKED_STATUSES: VehicleStatus[] = ["RESERVED", "UNDER_CONTRACT", "SOLD"];
 
 export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProps) {
-  const [search, setSearch] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<FilterGroup>("PUBLISHED");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  // URL State Management
+  const currentTab = (searchParams.get("tab") as FilterGroup) || "PUBLISHED";
+  const currentSearch = searchParams.get("search") || "";
+
+  const [vehicles, setVehicles] = React.useState(initialVehicles);
+  const [search, setSearch] = React.useState(currentSearch);
+  const [activeTab, setActiveTab] = React.useState<FilterGroup>(currentTab);
+  const [deleteConfirmText, setDeleteConfirmText] = React.useState("");
   const [isPending, startTransition] = React.useTransition();
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [activeVehicle, setActiveVehicle] = React.useState<SerializedVehicleWithMedia | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [generatorType, setGeneratorType] = React.useState<GeneratorType>("FACEBOOK");
+
+  // Sync state with URL when it changes (e.g. back button)
+  React.useEffect(() => {
+    setActiveTab(currentTab);
+    setSearch(currentSearch);
+  }, [currentTab, currentSearch]);
+
+  // Sync vehicles when initialVehicles changes (server-side refresh)
+  React.useEffect(() => {
+    setVehicles(initialVehicles);
+  }, [initialVehicles]);
+
+  const updateUrl = (tab: FilterGroup, searchText: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab && tab !== "PUBLISHED") {
+      params.set("tab", tab);
+    } else {
+      params.delete("tab");
+    }
+    
+    if (searchText) {
+      params.set("search", searchText);
+    } else {
+      params.delete("search");
+    }
+    
+    // Use replace for filter changes to avoid polluting history
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  // Debounced search sync to URL
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (search !== currentSearch) {
+        updateUrl(activeTab, search);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search, activeTab]);
+
+  const handleTabChange = (tab: FilterGroup) => {
+    setActiveTab(tab);
+    updateUrl(tab, search);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    // URL update happens in the useEffect above
+  };
 
   const openGenerator = (vehicle: SerializedVehicleWithMedia, type: GeneratorType) => {
     setActiveVehicle(vehicle);
@@ -87,11 +147,19 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
   };
 
   const handleStatusChange = (vehicleId: string, newStatus: VehicleStatus) => {
+    // Optimistic Update
+    setVehicles(prev => prev.map(v => 
+      v.id === vehicleId ? { ...v, vehicleStatus: newStatus } : v
+    ));
+
     startTransition(async () => {
       try {
         await updateVehicleStatusAction(vehicleId, newStatus);
         toast.success(`Vehicle status updated to ${VEHICLE_STATUS_LABELS[newStatus]}`);
+        router.refresh(); // Sync server truth
       } catch (error: any) {
+        // Rollback on error
+        setVehicles(initialVehicles);
         toast.error(error.message || "Failed to update status");
       }
     });
@@ -107,7 +175,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
   };
 
   const filteredVehicles = React.useMemo(() => {
-    return initialVehicles.filter((vehicle) => {
+    return vehicles.filter((vehicle) => {
       // 1. Search filter (Make, Model, VIN)
       const searchStr = `${vehicle.make} ${vehicle.model} ${vehicle.vin}`.toLowerCase();
       const matchesSearch = searchStr.includes(search.toLowerCase());
@@ -136,8 +204,8 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <Tabs
-          defaultValue="PUBLISHED"
-          onValueChange={(v) => setActiveTab(v as FilterGroup)}
+          value={activeTab}
+          onValueChange={(v) => handleTabChange(v as FilterGroup)}
           className="w-full sm:w-auto"
         >
           <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0">
@@ -151,14 +219,30 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
           </TabsList>
         </Tabs>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search VIN, Make, Model..."
-            className="pl-8"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search VIN, Make, Model..."
+              className="pl-8"
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              startTransition(() => {
+                router.refresh();
+              });
+              toast.info("Refreshing inventory...");
+            }}
+            disabled={isPending}
+            title="Refresh data"
+          >
+            <RotateCw className={cn("h-4 w-4", isPending && "animate-spin")} />
+          </Button>
         </div>
       </div>
 
@@ -417,8 +501,17 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
           setIsDeleteDialogOpen(false);
           setActiveVehicle(null);
         }}
-        onSuccess={() => {
-          // Re-fetch handled by server actions
+        confirmText={deleteConfirmText}
+        setConfirmText={setDeleteConfirmText}
+        onSuccess={(id, mode) => {
+          if (mode === "PERMANENT") {
+            setVehicles((prev) => prev.filter((v) => v.id !== id));
+          } else {
+            setVehicles((prev) =>
+              prev.map((v) => (v.id === id ? { ...v, vehicleStatus: "ARCHIVED" } : v))
+            );
+          }
+          router.refresh();
         }}
       />
     </div>
