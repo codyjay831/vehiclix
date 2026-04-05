@@ -8,6 +8,7 @@ import { ShieldCheck, ArrowRight, MessageSquare } from "lucide-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { InquiryModal } from "./InquiryModal";
 import { useTenant } from "@/components/providers/TenantProvider";
+import { cn } from "@/lib/utils";
 
 interface PricingPanelProps {
   vehicle: SerializedVehicle;
@@ -17,21 +18,31 @@ export function PricingPanel({ vehicle }: PricingPanelProps) {
   const [isInquiryOpen, setIsInquiryOpen] = React.useState(false);
   const tenant = useTenant();
 
-  const formattedPrice = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(Number(vehicle.price));
+  const showPrice = vehicle.pricingMode === "LIST_PRICE";
+  const formattedPrice = showPrice
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }).format(Number(vehicle.price))
+    : vehicle.pricingMode === "PRICE_ON_REQUEST"
+    ? "Price on Request"
+    : vehicle.pricingMode === "CALL_FOR_PRICE"
+    ? "Call for Price"
+    : "";
 
   return (
     <Card className="sticky top-24 border-2 shadow-xl rounded-2xl overflow-hidden group">
       <CardHeader className="bg-primary/5 pb-6 text-center">
-        <CardTitle className="text-3xl font-black tracking-tighter uppercase tabular-nums">
+        <CardTitle className={cn(
+          "font-black tracking-tighter uppercase tabular-nums",
+          showPrice ? "text-3xl" : "text-xl"
+        )}>
           {formattedPrice}
         </CardTitle>
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-medium pt-2">
           <ShieldCheck className="h-4 w-4 text-green-600" />
-          <span>Transparent Pricing</span>
+          <span>{showPrice ? "Transparent Pricing" : "Immediate Inquiry Available"}</span>
         </div>
       </CardHeader>
       

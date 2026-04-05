@@ -49,11 +49,17 @@ export function InventoryCard({ vehicle }: InventoryCardProps) {
             )}
           </div>
           <div className="text-xl font-black tabular-nums">
-            {new Intl.NumberFormat("en-US", {
-              style: "currency",
-              currency: "USD",
-              maximumFractionDigits: 0,
-            }).format(Number(vehicle.price))}
+            {vehicle.pricingMode === "LIST_PRICE" ? (
+              new Intl.NumberFormat("en-US", {
+                style: "currency",
+                currency: "USD",
+                maximumFractionDigits: 0,
+              }).format(Number(vehicle.price))
+            ) : vehicle.pricingMode === "PRICE_ON_REQUEST" ? (
+              <span className="text-sm uppercase tracking-widest text-primary">Price on Request</span>
+            ) : vehicle.pricingMode === "CALL_FOR_PRICE" ? (
+              <span className="text-sm uppercase tracking-widest text-primary">Call for Price</span>
+            ) : null}
           </div>
         </div>
         

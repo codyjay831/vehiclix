@@ -50,11 +50,14 @@ export function ListingGeneratorModal({ vehicle, type, isOpen, onClose }: Listin
     const highlights = (vehicle.highlights || [])
       .map((h) => `• ${h}`)
       .join("\n");
-    const price = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(vehicle.price);
+    const price =
+      vehicle.price !== null
+        ? new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 0,
+          }).format(Number(vehicle.price))
+        : "Price on request";
 
     if (type === "FACEBOOK") {
       return {
