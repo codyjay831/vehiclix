@@ -70,7 +70,7 @@ export function toPublicDealerDto(organization: NonNullable<ResolvedDealer>): Pu
     phone: organization.phone ?? null,
     branding: organization.branding
       ? {
-          publicSiteMode: organization.branding.publicSiteMode,
+          publicSiteMode: organization.branding.publicSiteMode || PublicSiteMode.FULL_STOREFRONT,
           logoUrl: organization.branding.logoUrl ?? null,
           primaryColor: organization.branding.primaryColor ?? null,
           heroHeadline: organization.branding.heroHeadline ?? null,

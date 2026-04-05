@@ -30,7 +30,8 @@ export async function generateMetadata({ params }: DealerHomePageProps): Promise
   const { branding, homepage } = dealerDtoToTenantBrandingHomepage(dealer);
 
   // Guard: Inventory Only mode redirects visitors to the inventory page
-  if (branding?.publicSiteMode === "INVENTORY_ONLY") {
+  const siteMode = branding?.publicSiteMode || "FULL_STOREFRONT";
+  if (siteMode === "INVENTORY_ONLY") {
     redirect(`/${dealerSlug}/inventory`);
   }
 
@@ -63,7 +64,8 @@ export default async function DealerHomePage({ params }: DealerHomePageProps) {
   }
 
   // Guard: Inventory Only mode redirects visitors to the inventory page
-  if (dealer.branding?.publicSiteMode === "INVENTORY_ONLY") {
+  const siteMode = dealer.branding?.publicSiteMode || "FULL_STOREFRONT";
+  if (siteMode === "INVENTORY_ONLY") {
     redirect(`/${dealerSlug}/inventory`);
   }
 
