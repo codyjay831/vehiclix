@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Check, Loader2, ExternalLink, CreditCard, Sparkles, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatUTC } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 
 interface BillingManagementProps {
@@ -97,9 +97,9 @@ export function BillingManagement({ subscription }: BillingManagementProps) {
               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Renewal Date</p>
               <p className="font-bold text-sm italic">
                 {subscription?.currentPeriodEnd 
-                  ? format(new Date(subscription.currentPeriodEnd), "PPP") 
+                  ? formatUTC(subscription.currentPeriodEnd, "full") 
                   : subscription?.trialEndsAt 
-                    ? format(new Date(subscription.trialEndsAt), "PPP")
+                    ? formatUTC(subscription.trialEndsAt, "full")
                     : "N/A"}
               </p>
             </div>

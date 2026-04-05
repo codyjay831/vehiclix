@@ -1,7 +1,7 @@
 "use client";
 
 import { LeadActivity, LeadActivityType, User } from "@prisma/client";
-import { formatDistanceToNow } from "date-fns";
+import { formatUTC } from "@/lib/date-utils";
 import { 
   MessageSquare, 
   ArrowRightLeft, 
@@ -66,7 +66,7 @@ export function LeadTimeline({ activities }: LeadTimelineProps) {
                   {activity.type.replace("_", " ")}
                 </span>
                 <span className="text-[10px] text-muted-foreground font-medium">
-                  {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+                  {formatUTC(activity.createdAt, "long")}
                 </span>
               </div>
               

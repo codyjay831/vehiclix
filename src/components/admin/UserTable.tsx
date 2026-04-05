@@ -27,7 +27,7 @@ import {
   UserCircle 
 } from "lucide-react";
 import { Role, User } from "@prisma/client";
-import { format } from "date-fns";
+import { formatUTC } from "@/lib/date-utils";
 import { deleteOrganizationUserAction, updateOrganizationUserRoleAction } from "@/actions/team";
 import { toast } from "sonner";
 import { AddUserModal } from "./AddUserModal";
@@ -139,7 +139,7 @@ export function UserTable({ initialUsers, currentUserRole, currentUserId }: User
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs font-medium">
-                    {format(new Date(user.createdAt), "MMM d, yyyy")}
+                    {formatUTC(user.createdAt, "long")}
                   </TableCell>
                   <TableCell>
                     {user.id !== currentUserId && (

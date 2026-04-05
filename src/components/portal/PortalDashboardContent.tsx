@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, CarFront, FileText, LayoutDashboard, History, Search, HistoryIcon } from "lucide-react";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { vehicleMediaCardUrl } from "@/lib/vehicle-media-display";
+import { formatUTC } from "@/lib/date-utils";
 
 type ActiveDealWithContext = Omit<Deal, "vehicle"> & { vehicle: PortalActiveDealVehicle };
 
@@ -150,7 +151,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                     <div className="flex justify-between items-start gap-4">
                       <div className="space-y-1">
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground leading-none">
-                          {new Date(inquiry.createdAt).toLocaleDateString()}
+                          {formatUTC(inquiry.createdAt)}
                         </p>
                         <p className="font-black uppercase tracking-tight italic group-hover:text-primary transition-colors">
                           {inquiry.vehicle.year} {inquiry.vehicle.make} {inquiry.vehicle.model}
@@ -193,7 +194,7 @@ export function PortalDashboardContent({ activeDeal, recentInquiries, recentRequ
                     <div className="flex justify-between items-start gap-4">
                       <div className="space-y-1">
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground leading-none">
-                          {new Date(request.createdAt).toLocaleDateString()}
+                          {formatUTC(request.createdAt)}
                         </p>
                         <p className="font-black uppercase tracking-tight italic group-hover:text-primary transition-colors">
                           Sourcing: {request.make} {request.model}

@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, ScrollText, Building2 } from "lucide-react";
+import { formatDateTimeUTC } from "@/lib/date-utils";
 
 export type AuditLogRow = {
   id: string;
@@ -165,10 +166,7 @@ export function SystemLogView({ events }: { events: AuditLogRow[] }) {
                   filtered.map((e) => (
                     <tr key={e.id} className="hover:bg-muted/5 transition-colors">
                       <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
-                        {new Date(e.createdAt).toLocaleString(undefined, {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
+                        {formatDateTimeUTC(e.createdAt)}
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-xs font-bold uppercase tracking-widest text-foreground">

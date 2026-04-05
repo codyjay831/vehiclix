@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDistanceToNow } from "date-fns";
+import { formatUTC } from "@/lib/date-utils";
 import Link from "next/link";
 import { Car, Clock, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -99,7 +99,7 @@ export function LeadListTable({ leads }: LeadListTableProps) {
             <TableCell>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" />
-                {lead.lastActivityAt ? formatDistanceToNow(new Date(lead.lastActivityAt), { addSuffix: true }) : "N/A"}
+                {lead.lastActivityAt ? formatUTC(lead.lastActivityAt, "long") : "N/A"}
               </div>
             </TableCell>
             <TableCell className="text-right">

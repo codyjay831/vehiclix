@@ -36,6 +36,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { vehicleMediaAdminThumbUrl } from "@/lib/vehicle-media-display";
 import { computeVehicleReadiness } from "@/lib/vehicle-readiness";
+import { formatUTC } from "@/lib/date-utils";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -315,7 +316,7 @@ export function AdminInventoryTable({ initialVehicles }: AdminInventoryTableProp
                     <NextActionCell vehicle={vehicle} onStatusChange={handleStatusChange} />
                   </TableCell>
                   <TableCell className="hidden xl:table-cell text-right text-muted-foreground text-xs">
-                    {new Date(vehicle.createdAt).toLocaleDateString()}
+                    {formatUTC(vehicle.createdAt)}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
